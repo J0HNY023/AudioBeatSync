@@ -11,13 +11,8 @@ export class AudioMixer {
         this.onEnded = null;
         this._nextId = 1;
         this._exportDest = null;
-
-        // ✅ Master stereo panner for all layers
-        this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 1.0;
-
-        this.masterPanner = this.ctx.createStereoPanner();
-        this.masterPanner.pan.value = 0;
+        this.masterGain = null;
+        this.masterPanner = null;
     }
 
     async init() {
@@ -32,6 +27,13 @@ export class AudioMixer {
             this.ctx = null;
         }
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // ✅ Master stereo panner for all layers
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.value = 1.0;
+
+        this.masterPanner = this.ctx.createStereoPanner();
+        this.masterPanner.pan.value = 0;
     }
 
     /** Set pan on the core (starred) layer */
