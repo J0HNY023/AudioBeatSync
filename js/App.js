@@ -390,8 +390,18 @@ class App {
         if (followToggle) {
             followToggle.addEventListener('change', (e) => {
                 this.followPlayhead = e.target.checked;
+                // Update visual state of the toggle button/label
+                const label = followToggle.closest('label');
+                if (label) {
+                    label.classList.toggle('active', this.followPlayhead);
+                }
                 this._triggerSave();
             });
+            // Initialize state on load
+            if (this.followPlayhead) {
+                const label = followToggle.closest('label');
+                if (label) label.classList.add('active');
+            }
         }
     }
 
@@ -1176,7 +1186,11 @@ class App {
         const vizPanel = document.querySelector('.viz-panel');
         if (vizPanel) {
             vizPanel.addEventListener('mousedown', (e) => this._onVizMouseDown(e));
+            vizPanel.addEventListener('mousemove', (e) => this._onVizMouseMove(e));
+            vizPanel.addEventListener('mouseup', () => this._onVizMouseUp());
             vizPanel.addEventListener('click', (e) => this._onVizClick(e));
+            // Prevent context menu on right-click
+            vizPanel.addEventListener('contextmenu', (e) => e.preventDefault());
         }
 
         // Audio end callback
@@ -2009,7 +2023,8 @@ class App {
     _scrollBeatListToCurrent(currentTime) {
         const activeEl = this.dom.beatList.querySelector('.beat-item.active');
         if (activeEl) {
-            activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            // Scroll to center the active element
+            activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     }
 
@@ -2067,10 +2082,23 @@ class App {
             return;
         }
         
-        // Normal click: seek
+        // Normal click: start dragging for scrubbing
         this.isDragging = true;
         const time = this._getTimeFromVizX(e.clientX);
         this._seekTo(time);
+    }
+
+    _onVizMouseMove(e) {
+        if (!this.isDragging || !this.engine.buffer) return;
+        
+        // Seek to exact mouse position for precise scrubbing
+        const time = this._getTimeFromVizX(e.clientX);
+        this._seekTo(time);
+    }
+
+    _onVizMouseUp() {
+        this.isDragging = false;
+        this._beatSelecting = false;
     }
 
     _onVizClick(e) {
