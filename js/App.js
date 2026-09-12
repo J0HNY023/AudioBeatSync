@@ -1174,16 +1174,20 @@ class App {
         window.addEventListener('keydown', this._boundHandlers.windowKeydown, { passive: false });
 
         // ── Media upload ──────────────────────────────
-        document.getElementById('mediaInput').addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            this.currentMediaFile = file;
-            await this.reactor.loadMedia(file);
-            this.vizBg.setMedia(this.reactor.mediaEl);
-            document.getElementById('reactorPlaceholder').style.display = 'none';
-            await SessionStore.saveBlob('media', file);
-            this._triggerSave();
-        });
+        const mediaInput = document.getElementById('mediaInput');
+        if (mediaInput) {
+            mediaInput.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                this.currentMediaFile = file;
+                await this.reactor.loadMedia(file);
+                this.vizBg.setMedia(this.reactor.mediaEl);
+                const reactorPlaceholder = document.getElementById('reactorPlaceholder');
+                if (reactorPlaceholder) reactorPlaceholder.style.display = 'none';
+                await SessionStore.saveBlob('media', file);
+                this._triggerSave();
+            });
+        }
 
         // ── Overlay Visualizer Controls ───────────────
         const overlayEnabledEl = document.getElementById('overlayEnabled');
