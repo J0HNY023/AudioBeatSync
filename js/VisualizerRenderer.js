@@ -14,11 +14,20 @@ export class VisualizerRenderer {
 
     resize(displayWidth, displayHeight) {
         const dpr = window.devicePixelRatio || 1;
-        this.canvas.width = Math.round(displayWidth * dpr);
-        this.canvas.height = Math.round(displayHeight * dpr);
+        // Maintain aspect ratio (e.g., 16:9 or square based on container)
+        const targetAspect = displayWidth / displayHeight;
+        const canvasAspect = 16 / 9; // Default widescreen aspect
+        
+        let finalWidth = displayWidth;
+        let finalHeight = displayHeight;
+        
+        // If you want to maintain a specific aspect ratio, adjust here
+        // For now, we'll keep it filling the container but ensure proper scaling
+        this.canvas.width = Math.round(finalWidth * dpr);
+        this.canvas.height = Math.round(finalHeight * dpr);
         this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        this.width = displayWidth;
-        this.height = displayHeight;
+        this.width = finalWidth;
+        this.height = finalHeight;
     }
 
     setMode(mode) {
