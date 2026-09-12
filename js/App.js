@@ -21,7 +21,14 @@ class App {
         this.useMixer = false;                 // ✅ Flag: which system is active
 
         this.undoManager = new UndoManager(50);
-        this.waveform = new WaveformRenderer(document.getElementById('waveformCanvas'));
+        
+        // Safe DOM element access with null guards
+        const waveformCanvas = document.getElementById('waveformCanvas');
+        if (!waveformCanvas) {
+            console.error('[App] waveformCanvas not found');
+            return;
+        }
+        this.waveform = new WaveformRenderer(waveformCanvas);
         this.waveform._onZoomChange = () => {
             this._redrawWaveform();
             // Sync zoom slider UI
@@ -51,7 +58,8 @@ class App {
 
         this._debouncedSave = SessionStore.createDebouncedSave(800);
 
-        this.dom = {
+        // Safe DOM element access with null guards for all required elements
+        const domElements = {
             timelineContainer: document.getElementById('timelineContainer'),
             vizPlayhead: document.getElementById('vizPlayhead'),
             wfPlayhead: document.getElementById('wfPlayhead'),
@@ -68,11 +76,30 @@ class App {
             minGap: document.getElementById('minGap'),
             smoothWindow: document.getElementById('smoothWindow'),
         };
+        
+        // Validate critical DOM elements
+        const missingElements = Object.entries(domElements)
+            .filter(([_, el]) => !el)
+            .map(([key, _]) => key);
+        
+        if (missingElements.length > 0) {
+            console.error('[App] Missing DOM elements:', missingElements);
+        }
+        
+        this.dom = domElements;
 
         //selection state
         this._beatSelecting = false;
         this._beatSelStart = 0;
         this._beatSelEnd = 0;
+
+        // Store bound event handlers for cleanup
+        this._boundHandlers = {
+            windowMousemove: (e) => this._onMove(e),
+            windowMouseup: () => this._onUp(),
+            windowKeydown: (e) => this._onKeyDown(e),
+            beforeunload: () => this._saveSession()
+        };
 
                 // After DOM is ready, register panels:
         this._initPanels();
@@ -83,13 +110,52 @@ class App {
 
         this._resize();
 
-        new ResizeObserver(() => this._resize()).observe(this.dom.timelineContainer);
-        new ResizeObserver(() => this._resize()).observe(document.querySelector('.viz-panel'));
-        new ResizeObserver(() => this._resize()).observe(document.getElementById('reactorContainer'));
+        // Store ResizeObserver references for cleanup
+        this._resizeObservers = [];
+        const timelineObs = new ResizeObserver(() => this._resize());
+        timelineObs.observe(this.dom.timelineContainer);
+        this._resizeObservers.push(timelineObs);
+        
+        const vizPanelEl = document.querySelector('.viz-panel');
+        if (vizPanelEl) {
+            const vizObs = new ResizeObserver(() => this._resize());
+            vizObs.observe(vizPanelEl);
+            this._resizeObservers.push(vizObs);
+        }
+        
+        const reactorEl = document.getElementById('reactorContainer');
+        if (reactorEl) {
+            const reactorObs = new ResizeObserver(() => this._resize());
+            reactorObs.observe(reactorEl);
+            this._resizeObservers.push(reactorObs);
+        }
 
         this._renderLoop();
         this._restoreSession();
         this._loadDefaultMedia();
+    }
+    
+    /** Cleanup method to prevent memory leaks */
+    destroy() {
+        // Remove window event listeners
+        window.removeEventListener('mousemove', this._boundHandlers.windowMousemove);
+        window.removeEventListener('mouseup', this._boundHandlers.windowMouseup);
+        window.removeEventListener('keydown', this._boundHandlers.windowKeydown);
+        window.removeEventListener('beforeunload', this._boundHandlers.beforeunload);
+        
+        // Disconnect ResizeObservers
+        this._resizeObservers.forEach(obs => obs.disconnect());
+        this._resizeObservers = [];
+        
+        // Clean up audio engine
+        if (this.engine) {
+            this.engine.destroy?.();
+        }
+        
+        // Clean up mixer
+        if (this.mixer) {
+            this.mixer.destroy?.();
+        }
     }
 
         async _loadDefaultMedia() {
@@ -104,11 +170,13 @@ class App {
 
             await this.reactor.loadMedia(file);
             this.vizBg.setMedia(this.reactor.mediaEl);
-            document.getElementById('reactorPlaceholder').style.display = 'none';
+            const reactorPlaceholder = document.getElementById('reactorPlaceholder');
+            if (reactorPlaceholder) reactorPlaceholder.style.display = 'none';
 
             console.log('%c🖼️ Default background loaded', 'color:#555');
-        } catch (_) {
-            // Silently fail — default image is optional
+        } catch (err) {
+            // Log error but don't fail - default image is optional
+            console.warn('[App] Failed to load default background:', err.message || err);
         }
     }
 
@@ -1082,13 +1150,13 @@ class App {
             });
         }
 
-        // Timeline interaction
+        // Timeline interaction - use stored bound handlers for proper cleanup
         this.dom.timelineContainer.addEventListener('mousedown', e => this._onDown(e));
         this.dom.timelineContainer.addEventListener('contextmenu', (e) => {
             e.preventDefault();  // ✅ Allow right-click beat deletion
         });
-        window.addEventListener('mousemove', e => this._onMove(e));
-        window.addEventListener('mouseup', () => this._onUp());
+        window.addEventListener('mousemove', this._boundHandlers.windowMousemove);
+        window.addEventListener('mouseup', this._boundHandlers.windowMouseup);
         this.dom.timelineContainer.addEventListener('mouseenter', () => this.dom.tooltip.style.opacity = '1');
         this.dom.timelineContainer.addEventListener('mouseleave', () => {
             if (!this.isDragging) this.dom.tooltip.style.opacity = '0';
@@ -1103,7 +1171,7 @@ class App {
 
         // Keyboard shortcuts
         // ✅ CRITICAL: passive:false ensures preventDefault() works for Space/Arrow keys
-        window.addEventListener('keydown', (e) => this._onKeyDown(e), { passive: false });
+        window.addEventListener('keydown', this._boundHandlers.windowKeydown, { passive: false });
 
         // ── Media upload ──────────────────────────────
         document.getElementById('mediaInput').addEventListener('change', async (e) => {
@@ -1362,10 +1430,8 @@ class App {
             });
         }
 
-        // Save before page unload
-        window.addEventListener('beforeunload', () => {
-            SessionStore.saveSession(this._gatherState());
-        });
+        // Save before page unload - use stored bound handler for proper cleanup
+        window.addEventListener('beforeunload', this._boundHandlers.beforeunload);
 
         // ── Video Export Controls ─────────────────────
         const startExportBtn = document.getElementById('startExportBtn');
@@ -2684,7 +2750,9 @@ class App {
             // Apply CSS filters (brightness, invert, hue-rotate, etc.)
             const filter = mediaEl.style.filter;
             if (filter && filter !== 'none' && filter !== '') {
-                try { ctx.filter = filter; } catch (_) {}
+                try { ctx.filter = filter; } catch (err) {
+                    console.warn('[App] Failed to apply filter:', err.message);
+                }
             }
 
             // Draw media centered — maintain aspect ratio
@@ -2704,7 +2772,9 @@ class App {
                     const dh = ih * scale;
                     ctx.drawImage(mediaEl, -dw / 2, -dh / 2, dw, dh);
                 }
-            } catch (_) {}
+            } catch (err) {
+                console.warn('[App] Failed to draw media:', err.message);
+            }
 
             ctx.filter = 'none';
             ctx.globalAlpha = 1.0;

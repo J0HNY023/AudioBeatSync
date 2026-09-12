@@ -26,7 +26,9 @@ export class AudioMixer {
                 this.layers.forEach(l => l.stop());
                 this.layers = [];
                 await this.ctx.close();
-            } catch (_) {}
+            } catch (err) {
+                console.warn('[AudioMixer] Failed to close context:', err.message);
+            }
             this.ctx = null;
         }
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -66,7 +68,9 @@ export class AudioMixer {
         }
 
         if (this._exportDest && layer.gainNode) {
-            try { layer.gainNode.connect(this._exportDest); } catch (_) {}
+            try { layer.gainNode.connect(this._exportDest); } catch (err) {
+                console.warn('[AudioMixer] Failed to connect gainNode:', err.message);
+            }
             layer._exportDest = this._exportDest;
         }
 
@@ -78,10 +82,11 @@ export class AudioMixer {
         if (idx === -1) return;
         const layer = this.layers[idx];
         layer.stop();
-        if (layer.sourceNode) try { layer.sourceNode.disconnect(); } catch (_) {}
-        if (layer.analyser) try { layer.analyser.disconnect(); } catch (_) {}
-        if (layer.pannerNode) try { layer.pannerNode.disconnect(); } catch (_) {}
-        if (layer.gainNode) try { layer.gainNode.disconnect(); } catch (_) {}
+        // Safe disconnection with error logging
+        if (layer.sourceNode) try { layer.sourceNode.disconnect(); } catch (err) { console.warn('[AudioMixer] sourceNode disconnect failed:', err.message); }
+        if (layer.analyser) try { layer.analyser.disconnect(); } catch (err) { console.warn('[AudioMixer] analyser disconnect failed:', err.message); }
+        if (layer.pannerNode) try { layer.pannerNode.disconnect(); } catch (err) { console.warn('[AudioMixer] pannerNode disconnect failed:', err.message); }
+        if (layer.gainNode) try { layer.gainNode.disconnect(); } catch (err) { console.warn('[AudioMixer] gainNode disconnect failed:', err.message); }
         this.layers.splice(idx, 1);
 
         if (this.coreLayerId === id) {
@@ -118,7 +123,9 @@ export class AudioMixer {
             layer.applySoloState(anySoloed);
 
             if (this._exportDest && layer.gainNode) {
-                try { layer.gainNode.connect(this._exportDest); } catch (_) {}
+                try { layer.gainNode.connect(this._exportDest); } catch (err) {
+                    console.warn('[AudioMixer] Failed to connect gainNode for export:', err.message);
+                }
             }
         });
 
@@ -139,7 +146,7 @@ export class AudioMixer {
         this.isPlaying = false;
         this.layers.forEach(l => {
             l.stop();
-            if (l.sourceNode) try { l.sourceNode.disconnect(); } catch (_) {}
+            if (l.sourceNode) try { l.sourceNode.disconnect(); } catch (err) { console.warn('[AudioMixer] sourceNode disconnect failed:', err.message); }
         });
     }
 
@@ -189,11 +196,11 @@ export class AudioMixer {
         this.layers.forEach(layer => {
             if (!layer.gainNode) return;
             if (layer._exportDest) {
-                try { layer.gainNode.disconnect(layer._exportDest); } catch (_) {}
+                try { layer.gainNode.disconnect(layer._exportDest); } catch (err) { console.warn('[AudioMixer] gainNode disconnect failed:', err.message); }
             }
             layer._exportDest = dest;
             if (dest) {
-                try { layer.gainNode.connect(dest); } catch (_) {}
+                try { layer.gainNode.connect(dest); } catch (err) { console.warn('[AudioMixer] gainNode connect failed:', err.message); }
             }
         });
     }
@@ -201,16 +208,16 @@ export class AudioMixer {
     destroy() {
         this.layers.forEach(l => {
             l.stop();
-            if (l.sourceNode) try { l.sourceNode.disconnect(); } catch (_) {}
-            if (l.analyser) try { l.analyser.disconnect(); } catch (_) {}
-            if (l.pannerNode) try { l.pannerNode.disconnect(); } catch (_) {}
-            if (l.gainNode) try { l.gainNode.disconnect(); } catch (_) {}
+            if (l.sourceNode) try { l.sourceNode.disconnect(); } catch (err) { console.warn('[AudioMixer] sourceNode disconnect failed:', err.message); }
+            if (l.analyser) try { l.analyser.disconnect(); } catch (err) { console.warn('[AudioMixer] analyser disconnect failed:', err.message); }
+            if (l.pannerNode) try { l.pannerNode.disconnect(); } catch (err) { console.warn('[AudioMixer] pannerNode disconnect failed:', err.message); }
+            if (l.gainNode) try { l.gainNode.disconnect(); } catch (err) { console.warn('[AudioMixer] gainNode disconnect failed:', err.message); }
             l._exportDest = null;
         });
         this.layers = [];
         this._exportDest = null;
         if (this.ctx) {
-            this.ctx.close().catch(() => {});
+            this.ctx.close().catch(err => console.warn('[AudioMixer] Failed to close context:', err.message));
             this.ctx = null;
         }
         this.coreLayerId = null;
