@@ -1,1 +1,18 @@
-(js/App.js, js/VisualizerRenderer.js, styles.css)
+```
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+
+# Dependencies
+node_modules/
+```

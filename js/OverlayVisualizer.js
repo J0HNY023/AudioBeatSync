@@ -591,42 +591,34 @@ _drawHeartbeatLine(ctx, data, w, h) {
     if (!data) return;
 
     const midY = h / 2;
-    const maxSpike = h * 0.42;
-    const points = 600;
+    const maxSpike = h * 0.35;
+    const points = 400;
 
-    const bands = [
-        { name: 'sub-bass',  start: 0,    end: 0.02, label: 'Sub' },
-        { name: 'bass',      start: 0.02, end: 0.08, label: 'Kick' },
-        { name: 'low-mid',   start: 0.08, end: 0.15, label: 'LowMid' },
-        { name: 'mid',       start: 0.15, end: 0.35, label: 'Mid' },
-        { name: 'high-mid',  start: 0.35, end: 0.55, label: 'HiMid' },
-        { name: 'presence',  start: 0.55, end: 0.75, label: 'Pres' },
-        { name: 'brilliance',start: 0.75, end: 1.00, label: 'Air' },
-    ];
-
-    const bandCount = bands.length;
-    const beatThreshold = 0.35;
-
-    const bandEnergies = bands.map(band => {
-        const s = Math.floor(band.start * data.length);
-        const e = Math.max(s + 2, Math.floor(band.end * data.length));
+    // Focus on key frequency bands for heartbeat detection
+    const bassEnergy = (() => {
+        const start = 0;
+        const end = Math.floor(data.length * 0.1);
         let sum = 0;
-        for (let i = s; i < e; i++) sum += data[i];
-        return sum / ((e - s) * 255);
-    });
+        for (let i = start; i < end; i++) sum += data[i];
+        return sum / ((end - start) * 255);
+    })();
 
-    // ✅ Fixed EKG pattern
+    // ✅ Classic EKG pattern: P-wave, QRS complex, T-wave
     const ekgPattern = [
-        { t: 0.00, v: 0 },
-        { t: 0.35, v: 0 },
-        { t: 0.42, v: -0.08 },
-        { t: 0.47, v: 1.0 },
-        { t: 0.52, v: -0.25 },
-        { t: 0.57, v: 0 },
-        { t: 1.00, v: 0 },
+        { t: 0.00, v: 0 },     // Baseline
+        { t: 0.15, v: 0 },     // P-wave start (small bump)
+        { t: 0.20, v: 0.15 },  // P-wave peak
+        { t: 0.25, v: 0 },     // Back to baseline
+        { t: 0.35, v: 0 },     // Before QRS
+        { t: 0.38, v: -0.1 },  // Q-wave (small dip)
+        { t: 0.42, v: 1.0 },   // R-wave (main spike)
+        { t: 0.46, v: -0.2 },  // S-wave (deeper dip)
+        { t: 0.50, v: 0 },     // Back to baseline
+        { t: 0.70, v: 0 },     // T-wave start
+        { t: 0.80, v: 0.25 },  // T-wave peak (rounded recovery)
+        { t: 1.00, v: 0 },     // End of cycle
     ];
 
-    // ✅ sampleEKG takes only t — uses the fixed ekgPattern above
     const sampleEKG = (t) => {
         t = Math.max(0, Math.min(1, t));
         for (let i = 0; i < ekgPattern.length - 1; i++) {
@@ -640,106 +632,96 @@ _drawHeartbeatLine(ctx, data, w, h) {
         return 0;
     };
 
-    if (!this._ekgBandBursts) this._ekgBandBursts = bands.map(() => null);
-    if (!this._ekgBandLastBeat) this._ekgBandLastBeat = new Float32Array(bandCount);
+    // Track burst state for continuous heartbeat effect
+    if (!this._ekgBurst) this._ekgBurst = null;
+    if (!this._ekgLastBeat) this._ekgLastBeat = 0;
 
     const now = performance.now() / 1000;
-    const ekgDuration = 0.35;
+    const beatThreshold = 0.28;
+    const minBeatInterval = 0.15; // Prevent double-triggering
+    const ekgDuration = 0.4;
 
-    for (let b = 0; b < bandCount; b++) {
-        const energy = bandEnergies[b];
-        const zoneCenter = (b + 0.5) / bandCount;
+    // Trigger new heartbeat on strong bass hits
+    if (bassEnergy > beatThreshold && (now - this._ekgLastBeat) > minBeatInterval) {
+        const intensity = Math.min(1.0, 0.4 + (bassEnergy - beatThreshold) * 1.5);
+        this._ekgBurst = {
+            startTime: now,
+            phase: 0,
+            intensity: intensity,
+            peakEnergy: bassEnergy,
+        };
+        this._ekgLastBeat = now;
+    }
 
-        if (energy > beatThreshold && (now - this._ekgBandLastBeat[b]) > 0.12) {
-            const volIntensity = Math.min(1.0, (energy - beatThreshold) / (0.8 - beatThreshold));
-            this._ekgBandBursts[b] = {
-                startTime: now,
-                centerX: zoneCenter,
-                intensity: 0.3 + volIntensity * 0.7,
-                phase: 0,
-                peakVol: energy,
-                // ✅ No pattern property — uses fixed ekgPattern via sampleEKG(t)
-            };
-            this._ekgBandLastBeat[b] = now;
+    // Update burst animation
+    if (this._ekgBurst) {
+        this._ekgBurst.phase += (1 / 60) / ekgDuration;
+        
+        // Allow intensity to grow if stronger hit comes during early phase
+        if (this._ekgBurst.phase < 0.3 && bassEnergy > this._ekgBurst.peakEnergy) {
+            this._ekgBurst.peakEnergy = bassEnergy;
+            this._ekgBurst.intensity = Math.min(1.0, 0.4 + (bassEnergy - beatThreshold) * 1.5);
         }
-
-        const burst = this._ekgBandBursts[b];
-        if (burst) {
-            burst.phase += (1 / 60) / ekgDuration;
-            if (burst.phase < 0.45 && energy > burst.peakVol) {
-                burst.peakVol = energy;
-                burst.intensity = Math.min(1.0, 0.3 + ((energy - beatThreshold) / (0.8 - beatThreshold)) * 0.7);
-            }
-            if (burst.phase >= 1.0) this._ekgBandBursts[b] = null;
+        
+        if (this._ekgBurst.phase >= 1.0) {
+            this._ekgBurst = null;
         }
     }
 
-    const burstWidth = 0.11;
-
+    // Draw the EKG line with traveling burst
     ctx.beginPath();
     for (let i = 0; i <= points; i++) {
         const t = i / points;
         const x = t * w;
         let y = midY;
 
-        for (let b = 0; b < bandCount; b++) {
-            const burst = this._ekgBandBursts[b];
-            if (!burst) continue;
-
-            const distFromCenter = Math.abs(t - burst.centerX);
-            if (distFromCenter < burstWidth / 2) {
-                const burstT = (t - (burst.centerX - burstWidth / 2)) / burstWidth;
-                // ✅ sampleEKG takes only t — no burst.pattern
-                const ekgVal = sampleEKG(burstT);
-
-                let fadeOut = 1;
-                if (burst.phase > 0.65) {
-                    const fadeT = (burst.phase - 0.65) / 0.35;
-                    fadeOut = 1 - fadeT * fadeT * (3 - 2 * fadeT);
+        if (this._ekgBurst) {
+            const burst = this._ekgBurst;
+            const burstPos = burst.phase; // Position travels from 0 to 1
+            const burstWidth = 0.15;
+            
+            const distFromBurst = Math.abs(t - burstPos);
+            if (distFromBurst < burstWidth / 2) {
+                const localT = (t - (burstPos - burstWidth / 2)) / burstWidth;
+                const ekgVal = sampleEKG(localT);
+                
+                // Smooth fade in/out at burst edges
+                let fade = 1;
+                const edgeFade = distFromBurst / (burstWidth / 2);
+                if (edgeFade > 0.7) {
+                    fade = (1 - edgeFade) * 3.33;
                 }
-
-                let fadeIn = 1;
-                if (burst.phase < 0.10) {
-                    const fadeT = burst.phase / 0.10;
-                    fadeIn = fadeT * fadeT * (3 - 2 * fadeT);
-                }
-
-                y = midY - ekgVal * maxSpike * burst.intensity * fadeOut * fadeIn;
+                
+                y = midY - ekgVal * maxSpike * burst.intensity * fade;
             }
         }
 
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    ctx.lineWidth = 6;
+    // Multi-layer stroke for glow effect
+    ctx.strokeStyle = 'rgba(255,80,80,0.08)';
+    ctx.lineWidth = 8;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = 'rgba(255,80,80,0.3)';
+    ctx.lineWidth = 3;
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = 'rgba(255,200,200,0.95)';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    ctx.font = '9px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    for (let b = 0; b < bandCount; b++) {
-        const zoneX = ((b + 0.5) / bandCount) * w;
-        ctx.fillText(bands[b].label, zoneX, h - 6);
-    }
-
-    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    // Subtle grid lines for medical monitor feel
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
     ctx.lineWidth = 1;
-    for (let b = 1; b < bandCount; b++) {
-        const divX = (b / bandCount) * w;
+    for (let i = 1; i < 5; i++) {
+        const divX = (i / 5) * w;
         ctx.beginPath();
-        ctx.moveTo(divX, midY - maxSpike * 0.5);
-        ctx.lineTo(divX, midY + maxSpike * 0.3);
+        ctx.moveTo(divX, midY - maxSpike * 0.6);
+        ctx.lineTo(divX, midY + maxSpike * 0.4);
         ctx.stroke();
     }
 },
