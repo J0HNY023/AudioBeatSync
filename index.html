@@ -178,9 +178,26 @@
                     <button class="zoom-btn" id="zoomResetBtn" title="Reset Zoom">↺</button>
                     <span class="zoom-label" id="zoomLabel">1.0x</span>
                     <span class="zoom-hint">️ Scroll to zoom • Shift+drag to pan</span>
-                </div>                
+                </div>
 
-                <div class="instructions">🖱️ Click/drag waveform to seek • Green lines = detected beats • ⌨️ Space = Play/Pause</div>
+                <!-- PLAYBACK CONTROLS -->
+                <div class="controls">
+                    <button class="btn-secondary" id="playBtn" disabled>▶ Play</button>
+                    <div class="current-time" id="currentTimeDisplay">0:00.00</div>
+                    <!-- VOLUME CONTROL -->
+                    <div class="volume-control">
+                        <button class="volume-icon" id="volumeIcon" title="Mute/Unmute">🔊</button>
+                        <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="1" class="volume-slider">
+                        <span class="volume-value" id="volumeVal">100%</span>
+                    </div>
+                    <button class="btn-primary" id="analyzeBtn"> Detect Beats</button>
+                    <button id="undoBtn" class="btn-secondary" disabled title="Undo (Ctrl+Z)">↩ Undo</button>
+                    <button id="redoBtn" class="btn-secondary" disabled title="Redo (Ctrl+Y)">↪ Redo</button>
+                    <button class="btn-export" id="exportBtn" disabled>💾 Export CSV</button>
+                    <button class="btn-danger" id="clearSessionBtn">🗑️ Clear Session</button>
+                </div>
+
+                <div class="instructions">🖱️ Click/drag waveform or visualizer to seek • Green lines = detected beats • ⌨️ Space = Play/Pause</div>
             </div>
 
             <!-- Detection Settings (collapsible) -->
@@ -302,29 +319,6 @@
                 </div>
             </div>
 
-            <div class="controls">
-                <button class="btn-secondary" id="playBtn" disabled>▶ Play</button>
-                <div class="current-time" id="currentTimeDisplay">0:00.00</div>
-                                <!-- VOLUME CONTROL -->
-                <div class="volume-control">
-                    <button class="volume-icon" id="volumeIcon" title="Mute/Unmute">🔊</button>
-                    <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="1" class="volume-slider">
-                    <span class="volume-value" id="volumeVal">100%</span>
-                </div>
-
-                <button class="btn-primary" id="analyzeBtn"> Detect Beats</button>
-                <div class="controls">
-                    <!-- <button id="playBtn" class="btn-primary" disabled>▶ Play</button> -->
-                    <button id="undoBtn" class="btn-secondary" disabled title="Undo (Ctrl+Z)">↩ Undo</button>
-                    <button id="redoBtn" class="btn-secondary" disabled title="Redo (Ctrl+Y)">↪ Redo</button>
-                    <!-- <button id="analyzeBtn" class="btn-secondary">🔍 Detect Beats</button> -->
-                    <!-- <button id="exportBtn" class="btn-export" disabled>📥 Export CSV</button> -->
-                    <span class="current-time" id="currentTimeDisplay">0:00.00</span>
-                </div>
-                <button class="btn-export" id="exportBtn" disabled>💾 Export CSV</button>
-                <button class="btn-danger" id="clearSessionBtn">🗑️ Clear Session</button>
-            </div>
-
             <div class="stats hidden" id="statsSection">
                 <div class="stat-card"><div class="stat-value" id="bpmDisplay">--</div><div class="stat-label">BPM</div></div>
                 <div class="stat-card"><div class="stat-value" id="beatCount">--</div><div class="stat-label">Beats</div></div>
@@ -334,7 +328,19 @@
                 <div class="stat-card"><div class="stat-value" id="typeDisplay">--</div><div class="stat-label">Kick/Snare/Hat</div></div>
             </div>
 
-            <div class="beat-list hidden" id="beatList"></div>
+            <!-- Beat List with Follow Toggle -->
+            <div class="collapsible-header" id="headerBeatList">
+                <span>🎵 Beat List</span>
+                <div class="beat-list-controls">
+                    <label class="toggle-chip">
+                        <input type="checkbox" id="followPlayheadToggle"> Follow Playhead
+                    </label>
+                    <span class="collapse-icon">▼</span>
+                </div>
+            </div>
+            <div class="collapsible-content" id="contentBeatList">
+                <div class="beat-list hidden" id="beatList"></div>
+            </div>
         </div>
 
             <!-- ★ 50/50 SPLIT: Media Preview | Effects + Overlay ★ -->
