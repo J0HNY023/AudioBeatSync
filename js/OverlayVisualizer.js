@@ -591,10 +591,10 @@ _drawHeartbeatLine(ctx, data, w, h) {
     if (!data) return;
 
     const midY = h / 2;
-    const maxSpike = h * 0.35;
+    const maxSpike = h * 0.4;
     const points = 400;
 
-    // Focus on key frequency bands for heartbeat detection
+    // Focus on bass for beat detection
     const bassEnergy = (() => {
         const start = 0;
         const end = Math.floor(data.length * 0.1);
@@ -603,52 +603,21 @@ _drawHeartbeatLine(ctx, data, w, h) {
         return sum / ((end - start) * 255);
     })();
 
-    // ✅ Classic EKG pattern: P-wave, QRS complex, T-wave
-    const ekgPattern = [
-        { t: 0.00, v: 0 },     // Baseline
-        { t: 0.15, v: 0 },     // P-wave start (small bump)
-        { t: 0.20, v: 0.15 },  // P-wave peak
-        { t: 0.25, v: 0 },     // Back to baseline
-        { t: 0.35, v: 0 },     // Before QRS
-        { t: 0.38, v: -0.1 },  // Q-wave (small dip)
-        { t: 0.42, v: 1.0 },   // R-wave (main spike)
-        { t: 0.46, v: -0.2 },  // S-wave (deeper dip)
-        { t: 0.50, v: 0 },     // Back to baseline
-        { t: 0.70, v: 0 },     // T-wave start
-        { t: 0.80, v: 0.25 },  // T-wave peak (rounded recovery)
-        { t: 1.00, v: 0 },     // End of cycle
-    ];
-
-    const sampleEKG = (t) => {
-        t = Math.max(0, Math.min(1, t));
-        for (let i = 0; i < ekgPattern.length - 1; i++) {
-            const a = ekgPattern[i], b = ekgPattern[i + 1];
-            if (t >= a.t && t <= b.t) {
-                const localT = (t - a.t) / (b.t - a.t);
-                const smooth = localT * localT * (3 - 2 * localT);
-                return a.v + (b.v - a.v) * smooth;
-            }
-        }
-        return 0;
-    };
-
-    // Track burst state for continuous heartbeat effect
+    // Track burst state
     if (!this._ekgBurst) this._ekgBurst = null;
     if (!this._ekgLastBeat) this._ekgLastBeat = 0;
 
     const now = performance.now() / 1000;
-    const beatThreshold = 0.28;
-    const minBeatInterval = 0.15; // Prevent double-triggering
-    const ekgDuration = 0.4;
+    const beatThreshold = 0.3;
+    const minBeatInterval = 0.2;
+    const ekgDuration = 0.3;
 
-    // Trigger new heartbeat on strong bass hits
+    // Trigger on strong bass hit
     if (bassEnergy > beatThreshold && (now - this._ekgLastBeat) > minBeatInterval) {
-        const intensity = Math.min(1.0, 0.4 + (bassEnergy - beatThreshold) * 1.5);
         this._ekgBurst = {
             startTime: now,
             phase: 0,
-            intensity: intensity,
-            peakEnergy: bassEnergy,
+            intensity: Math.min(1.0, 0.5 + (bassEnergy - beatThreshold) * 1.5),
         };
         this._ekgLastBeat = now;
     }
@@ -656,19 +625,12 @@ _drawHeartbeatLine(ctx, data, w, h) {
     // Update burst animation
     if (this._ekgBurst) {
         this._ekgBurst.phase += (1 / 60) / ekgDuration;
-        
-        // Allow intensity to grow if stronger hit comes during early phase
-        if (this._ekgBurst.phase < 0.3 && bassEnergy > this._ekgBurst.peakEnergy) {
-            this._ekgBurst.peakEnergy = bassEnergy;
-            this._ekgBurst.intensity = Math.min(1.0, 0.4 + (bassEnergy - beatThreshold) * 1.5);
-        }
-        
         if (this._ekgBurst.phase >= 1.0) {
             this._ekgBurst = null;
         }
     }
 
-    // Draw the EKG line with traveling burst
+    // Draw the EKG line with sharp QRS complex (spike up, spike down)
     ctx.beginPath();
     for (let i = 0; i <= points; i++) {
         const t = i / points;
@@ -676,52 +638,80 @@ _drawHeartbeatLine(ctx, data, w, h) {
         let y = midY;
 
         if (this._ekgBurst) {
-            const burst = this._ekgBurst;
-            const burstPos = burst.phase; // Position travels from 0 to 1
-            const burstWidth = 0.15;
+            const burstPos = this._ekgBurst.phase;
+            const burstWidth = 0.12;
             
             const distFromBurst = Math.abs(t - burstPos);
             if (distFromBurst < burstWidth / 2) {
                 const localT = (t - (burstPos - burstWidth / 2)) / burstWidth;
-                const ekgVal = sampleEKG(localT);
                 
-                // Smooth fade in/out at burst edges
+                // Sharp QRS Complex: Quick dip, SHARP SPIKE UP, SHARP SPIKE DOWN
+                let ekgVal = 0;
+                
+                // Q dip (small down)
+                if (localT >= 0.2 && localT < 0.3) {
+                    ekgVal = -0.15 * ((localT - 0.2) / 0.1);
+                }
+                // R spike (SHARP UP - main peak)
+                else if (localT >= 0.3 && localT < 0.5) {
+                    const spikeT = (localT - 0.3) / 0.2;
+                    // Sharp triangular spike
+                    ekgVal = spikeT < 0.5 
+                        ? spikeT * 2 * 1.0 
+                        : (1 - spikeT) * 2 * 1.0;
+                }
+                // S spike (SHARP DOWN - main trough)
+                else if (localT >= 0.5 && localT < 0.7) {
+                    const spikeT = (localT - 0.5) / 0.2;
+                    // Sharp triangular spike downward
+                    ekgVal = spikeT < 0.5 
+                        ? spikeT * 2 * -0.8 
+                        : (1 - spikeT) * 2 * -0.8;
+                }
+                
+                // Fade at edges
                 let fade = 1;
                 const edgeFade = distFromBurst / (burstWidth / 2);
                 if (edgeFade > 0.7) {
                     fade = (1 - edgeFade) * 3.33;
                 }
                 
-                y = midY - ekgVal * maxSpike * burst.intensity * fade;
+                y = midY - ekgVal * maxSpike * this._ekgBurst.intensity * fade;
             }
         }
 
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
 
-    // Multi-layer stroke for glow effect
-    ctx.strokeStyle = 'rgba(255,80,80,0.08)';
-    ctx.lineWidth = 8;
+    // Multi-layer stroke for glow effect - RED color
+    ctx.strokeStyle = 'rgba(255,50,50,0.08)';
+    ctx.lineWidth = 10;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(255,80,80,0.3)';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,50,50,0.3)';
+    ctx.lineWidth = 4;
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(255,200,200,0.95)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255,220,220,0.95)';
+    ctx.lineWidth = 2;
     ctx.stroke();
 
     // Subtle grid lines for medical monitor feel
-    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
     ctx.lineWidth = 1;
-    for (let i = 1; i < 5; i++) {
-        const divX = (i / 5) * w;
+    const gridSize = w / 8;
+    for (let gx = 0; gx < w; gx += gridSize) {
         ctx.beginPath();
-        ctx.moveTo(divX, midY - maxSpike * 0.6);
-        ctx.lineTo(divX, midY + maxSpike * 0.4);
+        ctx.moveTo(gx, midY - maxSpike * 0.8);
+        ctx.lineTo(gx, midY + maxSpike * 0.6);
+        ctx.stroke();
+    }
+    for (let gy = midY - maxSpike * 0.8; gy <= midY + maxSpike * 0.6; gy += gridSize * 0.6) {
+        ctx.beginPath();
+        ctx.moveTo(0, gy);
+        ctx.lineTo(w, gy);
         ctx.stroke();
     }
 },
