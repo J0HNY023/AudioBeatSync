@@ -585,7 +585,7 @@ _drawConstellation(ctx, data, w, h) {
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1.2;
     ctx.stroke();
-},
+}
 
 _drawHeartbeatLine(ctx, data, w, h) {
     if (!data) return;
@@ -714,7 +714,7 @@ _drawHeartbeatLine(ctx, data, w, h) {
         ctx.lineTo(w, gy);
         ctx.stroke();
     }
-},
+}
 
 _drawBeatingHeart(ctx, data, w, h, beats = [], currentTime = 0) {
     if (!data) return;
