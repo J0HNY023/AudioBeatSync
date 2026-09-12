@@ -55,7 +55,9 @@ export class OverlayVisualizer {
     setPrimaryColor(c) { this.primaryColor = c; }
     setSecondaryColor(c) { this.secondaryColor = c; }
     setSaturation(v) { this.saturation = Math.max(0, Math.min(100, v)); }
-    setLightness(v) { this.lightness = Math.max(20, Math.min(80, v)); }    /**
+    setLightness(v) { this.lightness = Math.max(20, Math.min(80, v)); }
+
+    /**
      * Get color for a bar/element based on current color mode.
      * @param {number} index - bar index
      * @param {number} total - total bars
@@ -63,8 +65,7 @@ export class OverlayVisualizer {
      * @returns {string} CSS color string
      */
 
-
-        /**
+    /**
      * Get the frequency data slice for the current viz sync band.
      * Returns { data: Uint8Array subset, energy: 0-1 normalized average }
      */
