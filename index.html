@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beat Visualizer Studio</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="container">
+    <h1>🎵 Beat Visualizer Studio</h1>
+
+    <!-- UPLOAD SECTION (always visible) -->
+    <div class="upload-section">
+        <label class="upload-btn">
+            📁 Load Audio File(s)
+            <input type="file" id="audioInput" accept="audio/*" multiple>
+        </label>
+        <p class="upload-hint">MP3, WAV, OGG, FLAC, AAC — Select multiple files for layered tracks</p>
+    </div>
+
+    <div id="mainSection" class="hidden">
+
+        <!-- ═══ TAB NAVIGATION — 3 TABS ═══ -->
+        <div class="tab-nav" id="mainTabs">
+            <button class="tab-btn active" data-tab="media">🖼️ Media & Effects</button>
+            <button class="tab-btn" data-tab="audio">🔊 Audio</button>
+            <button class="tab-btn" data-tab="export">🎥 Export</button>
+        </div>
+
+        <!-- ═══════════════════════════════════════════ -->
+        <!-- TAB 1: MEDIA & EFFECTS                      -->
+        <!-- ═══════════════════════════════════════════ -->
+        <div class="tab-content" id="tabMedia">
+
+                    <!-- KEYFRAME AUTOMATION EDITOR -->
+        <div class="collapsible-header" id="headerKeyframes">
+            <span>🎞️ Keyframe Automation</span><span class="collapse-icon">▼</span>
+        </div>
+        <div class="collapsible-content" id="contentKeyframes">
+            <div class="keyframe-panel">
+                <div class="keyframe-toolbar">
+                    <button class="btn-primary btn-sm" id="addTrackBtn">+ Add Track</button>
+                    <button class="btn-secondary btn-sm" id="addKeyframeBtn" disabled>◆ Add Keyframe at Playhead</button>
+                    <button class="btn-danger btn-sm" id="clearKeyframesBtn">Clear All</button>
+                    <label class="toggle-chip active" style="margin-left:auto">
+                        <input type="checkbox" id="keyframeEnabled" checked> Automation Enabled
+                    </label>
+                </div>
+
+                <!-- Track List -->
+                <div class="keyframe-tracks" id="keyframeTracks">
+                    <p class="keyframe-empty" id="keyframeEmpty">No automation tracks yet. Click "+ Add Track" to animate any effect parameter over time.</p>
+                </div>
+
+                <!-- Keyframe Timeline Editor -->
+                <div class="keyframe-timeline-container hidden" id="keyframeTimelineContainer">
+                    <div class="keyframe-timeline-header">
+                        <span id="keyframeTrackLabel">Select a track to edit</span>
+                        <select id="keyframeEasing" class="keyframe-easing-select">
+                            <option value="linear">Linear</option>
+                            <option value="ease-in">Ease In</option>
+                            <option value="ease-out">Ease Out</option>
+                            <option value="ease-in-out" selected>Ease In-Out</option>
+                            <option value="step">Step (Instant)</option>
+                        </select>
+                    </div>
+                    <div class="keyframe-timeline" id="keyframeTimeline">
+                        <canvas id="keyframeCanvas"></canvas>
+                        <div class="keyframe-playhead" id="keyframePlayhead"></div>
+                    </div>
+                    <div class="keyframe-timeline-labels">
+                        <span>0:00</span>
+                        <span id="kfDurationLabel">0:00</span>
+                    </div>
+                </div>
+
+                <!-- Add Track Modal -->
+                <div class="keyframe-modal hidden" id="addTrackModal">
+                    <div class="keyframe-modal-content">
+                        <h3>Add Automation Track</h3>
+                        <div class="setting-group">
+                            <label>Target Effect</label>
+                            <select id="kfTargetSelect">
+                                <optgroup label="Master">
+                                    <option value="masterIntensity">Master Intensity</option>
+
+                                </optgroup>
+                                <optgroup label="Motion Effects">
+                                    <option value="jitter.intensity">Jitter → Intensity</option>
+                                    <option value="jitter.speed">Jitter → Speed</option>
+                                    <option value="jitter.threshold">Jitter → Threshold</option>
+                                    <option value="scale.intensity">Scale → Intensity</option>
+                                    <option value="scale.speed">Scale → Speed</option>
+                                    <option value="shake.intensity">Shake → Intensity</option>
+                                    <option value="rotate.intensity">Rotate → Intensity</option>
+                                    <option value="zoomBurst.intensity">Zoom Burst → Intensity</option>
+                                    <option value="trailEcho.intensity">Trail Echo → Intensity</option>
+                                </optgroup>
+                                <optgroup label="Color Effects">
+                                    <option value="flash.intensity">Flash → Intensity</option>
+                                    <option value="invert.intensity">Invert → Intensity</option>
+                                    <option value="hueRotate.intensity">Hue Rotate → Intensity</option>
+                                    <option value="hueRotate.speed">Hue Rotate → Speed</option>
+                                    <option value="strobe.intensity">Strobe → Intensity</option>
+                                    <option value="thermal.intensity">Thermal → Intensity</option>
+                                    <option value="posterize.intensity">Posterize → Intensity</option>
+                                </optgroup>
+                                <optgroup label="Distortion Effects">
+                                    <option value="glitch.intensity">Glitch → Intensity</option>
+                                    <option value="rgbSplit.intensity">RGB Split → Intensity</option>
+                                    <option value="pixelate.intensity">Pixelate → Intensity</option>
+                                    <option value="waveWarp.intensity">Wave Warp → Intensity</option>
+                                    <option value="scanlineCRT.intensity">Scanline CRT → Intensity</option>
+                                </optgroup>
+                                <optgroup label="Geometric Effects">
+                                    <option value="kaleidoscope.intensity">Kaleidoscope → Intensity</option>
+                                    <option value="mirrorKaleido.intensity">Mirror Kaleido → Intensity</option>
+                                    <option value="vignette.intensity">Vignette → Intensity</option>
+                                    <option value="mosaicShatter.intensity">Mosaic Shatter → Intensity</option>
+                                </optgroup>
+                                <optgroup label="Overlay">
+                                    <option value="overlay.opacity">Overlay → Opacity</option>
+                                    <option value="overlay.scaleX">Overlay → Scale X</option>
+                                    <option value="overlay.scaleY">Overlay → Scale Y</option>
+                                    <option value="overlay.rotation">Overlay → Rotation</option>
+                                </optgroup>
+                                <optgroup label="Audio">
+                                    <option value="panner.manualPan">Pan → Position</option>
+                                    <option value="panner.speed">Pan → Speed</option>
+                                    <option value="panner.intensity">Pan → Intensity</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div class="keyframe-modal-buttons">
+                            <button class="btn-primary" id="confirmAddTrack">Add Track</button>
+                            <button class="btn-secondary" id="cancelAddTrack">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+            <!-- Spectrum + Waveform (collapsible) -->
+            <div class="collapsible-header" id="headerSpectrum">
+                <span>🎚️ Live Spectrum + Waveform</span><span class="collapse-icon">▼</span>
+            </div>
+            <p class="instructions">
+                🖱️ Click/drag to seek • 
+                <kbd style="background:#333;padding:1px 5px;border-radius:3px;font-size:11px">Shift+Click</kbd> add beat • 
+                <kbd style="background:#333;padding:1px 5px;border-radius:3px;font-size:11px">Right-click</kbd> delete beat • 
+                <kbd style="background:#333;padding:1px 5px;border-radius:3px;font-size:11px">Alt+Drag</kbd> select &amp; delete multiple • 
+                ⬛ Space = Play/Pause
+            </p>
+
+
+
+            <div class="collapsible-content" id="contentSpectrum">
+                <div class="dual-display">
+                    <div class="viz-panel">
+                        <canvas id="vizBgCanvas"></canvas>
+                        <canvas id="vizCanvas"></canvas>
+                        <div class="playhead" id="vizPlayhead"></div>
+                    </div>
+                    <div class="waveform-panel" id="timelineContainer">
+                        <canvas id="waveformCanvas"></canvas>
+                        <div class="playhead" id="wfPlayhead"></div>
+                        <div class="time-tooltip" id="timeTooltip"></div>
+                    </div>
+                </div>
+
+
+                <!-- ZOOM CONTROLS -->
+                <div class="zoom-controls">
+                    <button class="zoom-btn" id="zoomOutBtn" title="Zoom Out">➖</button>
+                    <input type="range" id="zoomSlider" min="1" max="50" step="0.5" value="1" class="zoom-slider">
+                    <button class="zoom-btn" id="zoomInBtn" title="Zoom In">➕</button>
+                    <button class="zoom-btn" id="zoomResetBtn" title="Reset Zoom">↺</button>
+                    <span class="zoom-label" id="zoomLabel">1.0x</span>
+                    <span class="zoom-hint">️ Scroll to zoom • Shift+drag to pan</span>
+                </div>                
+
+                <div class="instructions">🖱️ Click/drag waveform to seek • Green lines = detected beats • ⌨️ Space = Play/Pause</div>
+            </div>
+
+            <!-- Detection Settings (collapsible) -->
+            <div class="collapsible-header" id="headerDetection">
+                <span>🔍 Beat Detection Settings</span><span class="collapse-icon">▼</span>
+            </div>
+            <div class="collapsible-content" id="contentDetection">
+            <div class="settings-panel">
+                <!-- Row 1: Core settings -->
+                <div class="setting-group">
+                    <label>Frequency Band</label>
+                    <select id="freqBand">
+                        <optgroup label="Low End">
+                            <option value="ultra-sub">Ultra-Sub (10-30 Hz)</option>
+                            <option value="sub-bass">Sub-Bass (20-60 Hz)</option>
+                            <option value="kick">Kick Fundamental (50-100 Hz)</option>
+                            <option value="bass" selected>Bass / Kick (60-250 Hz)</option>
+                            <option value="guitar-chug">Guitar Chug (100-400 Hz)</option>
+                        </optgroup>
+                        <optgroup label="Mids">
+                            <option value="vocal-formant">Vocal Formant (300-800 Hz)</option>
+                            <option value="low-mid">Snare Body / Toms (250-500 Hz)</option>
+                            <option value="mid">Vocals / Mids (500-2k Hz)</option>
+                        </optgroup>
+                        <optgroup label="High End">
+                            <option value="snare-crack">Snare Crack (1k-3k Hz)</option>
+                            <option value="clap">Clap Layer (1.5k-4k Hz)</option>
+                            <option value="high-mid">Hi-Hat / Clap (2k-4k Hz)</option>
+                            <option value="presence">Presence (4k-6k Hz)</option>
+                            <option value="ride-bell">Ride Bell (5k-8k Hz)</option>
+                            <option value="brilliance">Brilliance (6k-20k Hz)</option>
+                            <option value="air">Air / Sparkle (10k-20k Hz)</option>
+                        </optgroup>
+                        <optgroup label="Special">
+                            <option value="full">Full Spectrum</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <div class="setting-group">
+                    <label>Detection Algorithm</label>
+                    <select id="detectAlgorithm">
+                        <option value="energy" selected>Energy (Best for kicks/bass)</option>
+                        <option value="flux">Spectral Flux (Best for snares/hats)</option>
+                        <option value="combined">Combined (Most accurate)</option>
+                    </select>
+                </div>
+
+                <div class="setting-group">
+                    <label>Sensitivity</label>
+                    <input type="range" id="threshold" min="1.1" max="3.0" step="0.1" value="1.4">
+                    <div class="range-value" id="thresholdVal">1.4x</div>
+                </div>
+
+                <div class="setting-group">
+                    <label>Min Beat Gap</label>
+                    <input type="range" id="minGap" min="50" max="600" step="25" value="200">
+                    <div class="range-value" id="minGapVal">200ms</div>
+                </div>
+
+                <!-- Row 2: Advanced settings -->
+                <div class="setting-group">
+                    <label>Smoothing Window</label>
+                    <input type="range" id="smoothWindow" min="10" max="80" step="5" value="40">
+                    <div class="range-value" id="smoothVal">40 frames</div>
+                </div>
+
+                <div class="setting-group">
+                    <label>Onset Sharpness</label>
+                    <input type="range" id="onsetSharpness" min="0" max="1.0" step="0.05" value="0">
+                    <div class="range-value" id="sharpnessVal">Off</div>
+                </div>
+
+                <div class="setting-group">
+                    <label>Decay Rate</label>
+                    <input type="range" id="decayRate" min="0.1" max="1.0" step="0.1" value="0.5">
+                    <div class="range-value" id="decayVal">0.5</div>
+                </div>
+
+                <div class="setting-group">
+                    <label>Auto-Detect</label>
+                    <select id="autoDetect">
+                        <option value="on" selected>On — Redetect on change</option>
+                        <option value="off">Off — Manual only</option>
+                    </select>
+                </div>
+
+                <!-- Row 3: Toggle features -->
+                <div class="setting-group">
+                    <label>BPM Lock</label>
+                    <select id="bpmLock">
+                        <option value="off" selected>Off</option>
+                        <option value="on">On — Snap to grid</option>
+                    </select>
+                </div>
+
+                <div class="setting-group">
+                    <label>Pre-Emphasis</label>
+                    <select id="preEmphasis">
+                        <option value="off" selected>Off</option>
+                        <option value="on">On — Boost highs</option>
+                    </select>
+                </div>
+
+                <div class="setting-group">
+                    <label>Multi-Band</label>
+                    <select id="multiBand">
+                        <option value="off" selected>Off — Single band</option>
+                        <option value="on">On — Kick+Snare+Hat merge</option>
+                    </select>
+                </div>
+
+                <div class="setting-group">
+                    <label>Beat Labels</label>
+                    <select id="labelTypes">
+                        <option value="off" selected>Off</option>
+                        <option value="on">On — Tag kick/snare/hat</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button class="btn-secondary" id="playBtn" disabled>▶ Play</button>
+                <div class="current-time" id="currentTimeDisplay">0:00.00</div>
+                                <!-- VOLUME CONTROL -->
+                <div class="volume-control">
+                    <button class="volume-icon" id="volumeIcon" title="Mute/Unmute">🔊</button>
+                    <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="1" class="volume-slider">
+                    <span class="volume-value" id="volumeVal">100%</span>
+                </div>
+
+                <button class="btn-primary" id="analyzeBtn"> Detect Beats</button>
+                <div class="controls">
+                    <!-- <button id="playBtn" class="btn-primary" disabled>▶ Play</button> -->
+                    <button id="undoBtn" class="btn-secondary" disabled title="Undo (Ctrl+Z)">↩ Undo</button>
+                    <button id="redoBtn" class="btn-secondary" disabled title="Redo (Ctrl+Y)">↪ Redo</button>
+                    <!-- <button id="analyzeBtn" class="btn-secondary">🔍 Detect Beats</button> -->
+                    <!-- <button id="exportBtn" class="btn-export" disabled>📥 Export CSV</button> -->
+                    <span class="current-time" id="currentTimeDisplay">0:00.00</span>
+                </div>
+                <button class="btn-export" id="exportBtn" disabled>💾 Export CSV</button>
+                <button class="btn-danger" id="clearSessionBtn">🗑️ Clear Session</button>
+            </div>
+
+            <div class="stats hidden" id="statsSection">
+                <div class="stat-card"><div class="stat-value" id="bpmDisplay">--</div><div class="stat-label">BPM</div></div>
+                <div class="stat-card"><div class="stat-value" id="beatCount">--</div><div class="stat-label">Beats</div></div>
+                <div class="stat-card"><div class="stat-value" id="durationDisplay">--</div><div class="stat-label">Duration</div></div>
+                <div class="stat-card"><div class="stat-value" id="bandDisplay">--</div><div class="stat-label">Band</div></div>
+                <div class="stat-card"><div class="stat-value" id="algoDisplay">--</div><div class="stat-label">Algorithm</div></div>
+                <div class="stat-card"><div class="stat-value" id="typeDisplay">--</div><div class="stat-label">Kick/Snare/Hat</div></div>
+            </div>
+
+            <div class="beat-list hidden" id="beatList"></div>
+        </div>
+
+            <!-- ★ 50/50 SPLIT: Media Preview | Effects + Overlay ★ -->
+            <div class="split-workspace">
+                <!-- LEFT HALF: Media Preview -->
+                <div class="split-left">
+                    <div class="split-header">
+                        <span>🎬 Beat-Reactive Media</span>
+                        <label class="reactor-upload-btn-sm">
+                            📷 Upload
+                            <input type="file" id="mediaInput" accept="image/*,video/*" hidden>
+                        </label>
+                    </div>
+                    <div class="reactor-canvas" id="reactorContainer">
+                        <canvas id="overlayCanvas"></canvas>
+                        <div class="reactor-placeholder" id="reactorPlaceholder">
+                            <p style="color:#555;font-size:14px">Upload an image or video</p>
+                            <p style="color:#444;font-size:11px">JPG, PNG, GIF, MP4, WebM, MOV</p>
+                        </div>
+                    </div>
+                                        <!-- MEDIA TRANSFORM CONTROLS -->
+                    <div class="media-transform-panel">
+                        <div class="media-transform-header">
+                            <span>🔧 Media Transform</span>
+                            <label class="toggle-chip active" style="margin-left:auto" id="videoLoopToggle">
+                                <input type="checkbox" id="videoLoop" checked> 🔁 Loop Video
+                            </label>
+                        </div>
+                        <div class="media-transform-grid">
+                            <div class="setting-group">
+                                <label>Scale X</label>
+                                <input type="range" id="mediaScaleX" min="0.1" max="5.0" step="0.1" value="1.0">
+                                <div class="range-value" id="mediaScaleXVal">1.0x</div>
+                            </div>
+                            <div class="setting-group">
+                                <label>Scale Y</label>
+                                <input type="range" id="mediaScaleY" min="0.1" max="5.0" step="0.1" value="1.0">
+                                <div class="range-value" id="mediaScaleYVal">1.0x</div>
+                            </div>
+                            <div class="setting-group">
+                                <label>Rotation</label>
+                                <input type="range" id="mediaRotate" min="-360" max="360" step="1" value="0">
+                                <div class="range-value" id="mediaRotateVal">0°</div>
+                            </div>
+                            <div class="setting-group">
+                                <label>Offset X</label>
+                                <input type="range" id="mediaOffsetX" min="-50" max="50" step="1" value="0">
+                                <div class="range-value" id="mediaOffsetXVal">0%</div>
+                            </div>
+                            <div class="setting-group">
+                                <label>Offset Y</label>
+                                <input type="range" id="mediaOffsetY" min="-50" max="50" step="1" value="0">
+                                <div class="range-value" id="mediaOffsetYVal">0%</div>
+                            </div>
+                            <div class="setting-group">
+                                <label>Flip</label>
+                                <div class="flip-buttons">
+                                    <button class="flip-btn" id="mediaFlipH" title="Flip Horizontal">↔️</button>
+                                    <button class="flip-btn" id="mediaFlipV" title="Flip Vertical">↕️</button>
+                                    <button class="flip-btn" id="mediaResetTransform" title="Reset Transform">↺</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RIGHT HALF: Paginated Effects + Overlay -->
+                <div class="split-right">
+                    <div class="split-header">
+                        <span>🎛️ Effects & Overlay</span>
+                        <div class="master-intensity-sm">
+                            <input type="range" id="masterIntensity" min="0.1" max="3.0" step="0.1" value="1.0">
+                            <span class="range-value" id="masterIntensityVal">1.0x</span>
+                        </div>
+                    </div>
+
+                                        <!-- MIRROR CONTROLS -->
+                    <div class="mirror-controls">
+                        <span class="mirror-label">🪞 Mirror</span>
+                        <label class="toggle-chip" id="mirrorHToggle">
+                            <input type="checkbox" id="mirrorH"> ↔️ H-Flip
+                        </label>
+                        <label class="toggle-chip" id="mirrorVToggle">
+                            <input type="checkbox" id="mirrorV"> ↕️ V-Flip
+                        </label>
+                        <label class="toggle-chip" id="mirrorQuadToggle">
+                            <input type="checkbox" id="mirrorQuad"> ✦ Quad
+                        </label>
+                        <div class="mirror-param">
+                            <label>Gap</label>
+                            <input type="range" id="mirrorGap" min="0" max="50" step="1" value="0">
+                            <span class="param-val" id="mirrorGapVal">0px</span>
+                        </div>
+                        <div class="mirror-param">
+                            <label>Opacity</label>
+                            <input type="range" id="mirrorOpacity" min="0.1" max="1.0" step="0.05" value="0.85">
+                            <span class="param-val" id="mirrorOpacityVal">0.85</span>
+                        </div>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div class="effect-pagination" id="effectPagination">
+                        <button class="page-btn active" data-page="motion">〰️ Motion</button>
+                        <button class="page-btn" data-page="color">🎨 Color</button>
+                        <button class="page-btn" data-page="distortion"> Distortion</button>
+                        <button class="page-btn" data-page="geometric">🔮 Geometric</button>
+                        <button class="page-btn" data-page="all">📋 All (21)</button>
+                        <button class="page-btn page-btn-overlay" data-page="overlay">🎚️ Overlay</button>
+                    </div>
+
+                    <!-- Effects Grid (paginated) -->
+                    <div class="effects-grid-paginated" id="effectsGrid"></div>
+
+                    <!-- Overlay Controls (hidden by default) -->
+                    <div class="overlay-page-content hidden" id="overlayPageContent">
+                        <div class="overlay-controls-inner">
+                            <div class="overlay-header">
+                                <span class="toggle-section-label">Spectrum Overlay on Media</span>
+                                <label class="toggle-chip active" style="margin-left:auto">
+                                    <input type="checkbox" id="overlayEnabled" checked> Enabled
+                                </label>
+                            </div>
+                            <div class="setting-group">
+                                <label>Viz Sync Band</label>
+                                <select id="vizSyncBand">
+                                    <option value="sub-bass">Sub-Bass (20-60 Hz)</option>
+                                    <option value="bass" selected>Bass / Kick (60-250 Hz)</option>
+                                    <option value="low-mid">Low-Mid (250-500 Hz)</option>
+                                    <option value="mid">Mid (500-2k Hz)</option>
+                                    <option value="high-mid">High-Mid (2k-4k Hz)</option>
+                                    <option value="presence">Presence (4k-6k Hz)</option>
+                                    <option value="full">Full Spectrum</option>
+                                </select>
+                            </div>
+                            <div class="overlay-grid">
+                                <div class="setting-group">
+                                    <label>Visualizer Mode</label>
+                                    <select id="overlayMode">
+                                        <optgroup label="Waveform">
+                                            <option value="beatingHeart">Beating Heart ♥</option>
+                                            <option value="wave">Waveform Line</option>
+                                            <option value="neonWave">Neon Wave</option>
+                                            <option value="arcWaveform">Arc Waveform</option>
+                                            <option value="heartbeat">Heartbeat EKG</option>
+                                        </optgroup>
+                                        
+                                        </optgroup>
+                                            <optgroup label="Waveform">
+                                            <option value="wave">Waveform Line</option>
+                                            <option value="neonWave">Neon Wave</option>
+                                            <option value="arcWaveform">Arc Waveform ✦</option>
+                                        </optgroup>
+                                        <optgroup label="Spectrum">
+                                            <option value="bars">Spectrum Bars</option>
+                                            <option value="mirror">Mirrored Spectrum</option>
+                                            <option value="dotSpectrum">Dot Spectrum</option>
+                                            <option value="glitchSpectrum">Glitch Spectrum</option>
+                                        </optgroup>
+                                        <optgroup label="Circular / Radial">
+                                            <option value="circular">Radial Spectrum</option>
+                                            <option value="radial">Pulse Burst</option>
+                                            <option value="audioTunnel">Audio Tunnel</option>
+                                        </optgroup>
+                                        <optgroup label="Waveform">
+                                            <option value="wave">Waveform Line</option>
+                                            <option value="neonWave">Neon Wave</option>
+                                        </optgroup>
+                                        <optgroup label="Particles / Effects">
+                                            <option value="particles">Particle Burst</option>
+                                            <option value="constellation">Constellation</option>
+                                            <option value="bassPulse">Bass Pulse</option>
+                                        </optgroup>
+                                        <optgroup label="Experimental">
+                                            <option value="reactiveGrid">Reactive Grid</option>
+                                            <option value="heatmap">Frequency Heatmap</option>
+                                     
+                                    </select>
+                                </div>
+                                <div class="setting-group">
+                                    <label>Blend Mode</label>
+                                    <select id="overlayBlend">
+                                        <option value="screen" selected>Screen (Glow)</option>
+                                        <option value="add">Add (Bright)</option>
+                                        <option value="lighten">Lighten</option>
+                                        <option value="color-dodge">Color Dodge</option>
+                                        <option value="overlay">Overlay</option>
+                                        <option value="hard-light">Hard Light</option>
+                                        <option value="normal">Normal (Opaque)</option>
+                                        <option value="multiply">Multiply (Dark)</option>
+                                    </select>
+                                </div>
+                                <div class="setting-group">
+                                    <label>Opacity</label>
+                                    <input type="range" id="overlayOpacity" min="0" max="1" step="0.05" value="0.7">
+                                    <div class="range-value" id="overlayOpacityVal">0.70</div>
+                                </div>
+                                <div class="setting-group">
+                                    <label>Scale X</label>
+                                    <input type="range" id="overlayScaleX" min="0.2" max="3.0" step="0.1" value="1.0">
+                                    <div class="range-value" id="overlayScaleXVal">1.0x</div>
+                                </div>
+                                <div class="setting-group">
+                                    <label>Scale Y</label>
+                                    <input type="range" id="overlayScaleY" min="0.2" max="3.0" step="0.1" value="1.0">
+                                    <div class="range-value" id="overlayScaleYVal">1.0x</div>
+                                </div>
+                                <div class="setting-group">
+                                    <label>Offset X</label>
+                                    <input type="range" id="overlayOffsetX" min="-50" max="50" step="1" value="0">
+                                    <div class="range-value" id="overlayOffsetXVal">0%</div>
+                                </div>
+                                <div class="setting-group">
+                                    <label>Offset Y</label>
+                                    <input type="range" id="overlayOffsetY" min="-50" max="50" step="1" value="0">
+                                    <div class="range-value" id="overlayOffsetYVal">0%</div>
+                                </div>
+                                <div class="setting-group">
+                                    <label>Rotation</label>
+                                    <input type="range" id="overlayRotation" min="-180" max="180" step="1" value="0">
+                                    <div class="range-value" id="overlayRotationVal">0°</div>
+                                </div>
+                                                                <!-- COLOR SETTINGS -->
+                                <div class="overlay-grid" style="margin-top:12px;border-top:1px solid #252525;padding-top:12px">
+                                    <div class="setting-group">
+                                        <label>Color Mode</label>
+                                        <select id="overlayColorMode">
+                                            <option value="rainbow" selected>🌈 Rainbow</option>
+                                            <option value="solid">■ Solid Color</option>
+                                            <option value="gradient">▨ Gradient</option>
+                                            <option value="beat">💓 Beat Reactive</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-group" id="primaryColorGroup">
+                                        <label>Primary Color</label>
+                                        <input type="color" id="overlayPrimaryColor" value="#00d4ff" class="color-picker">
+                                    </div>
+                                    <div class="setting-group" id="secondaryColorGroup">
+                                        <label>Secondary Color</label>
+                                        <input type="color" id="overlaySecondaryColor" value="#ff3366" class="color-picker">
+                                    </div>
+                                    <div class="setting-group" id="saturationGroup">
+                                        <label>Saturation</label>
+                                        <input type="range" id="overlaySaturation" min="0" max="100" step="1" value="100">
+                                        <div class="range-value" id="overlaySaturationVal">100%</div>
+                                    </div>
+                                    <div class="setting-group" id="lightnessGroup">
+                                        <label>Lightness</label>
+                                        <input type="range" id="overlayLightness" min="20" max="80" step="1" value="55">
+                                        <div class="range-value" id="overlayLightnessVal">55%</div>
+                                    </div>
+                                </div>
+
+                                <!-- Color Presets -->
+                                <div class="effects-presets" style="margin-top:8px">
+                                    <button class="preset-btn" data-color-preset="neon"> Neon</button>
+                                    <button class="preset-btn" data-color-preset="fire">🔥 Fire</button>
+                                    <button class="preset-btn" data-color-preset="ice">❄️ Ice</button>
+                                    <button class="preset-btn" data-color-preset="matrix">💚 Matrix</button>
+                                    <button class="preset-btn" data-color-preset="sunset">🌅 Sunset</button>
+                                    <button class="preset-btn" data-color-preset="purple-haze">💜 Purple Haze</button>
+                                    <button class="preset-btn" data-color-preset="white"> White</button>
+                                    <button class="preset-btn" data-color-preset="reset-color">↺ Reset</button>
+                                </div>
+                            </div>
+                            <button class="btn-secondary" id="resetOverlayBtn" style="margin-top:12px;width:100%">↺ Reset Overlay Transform</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════ -->
+        <!-- TAB 2: AUDIO                                -->
+        <!-- ═══════════════════════════════════════════ -->
+        <div class="tab-content" id="tabAudio" style="display:none">
+                        <!-- MULTI-TRACK MIXER -->
+            <div class="collapsible-header" id="headerMixer">
+                <span>🎚️ Audio Layers</span><span class="collapse-icon">▼</span>
+            </div>
+            <div class="collapsible-content" id="contentMixer">
+                <div class="mixer-panel">
+                    <div class="mixer-toolbar">
+                        <label class="reactor-upload-btn-sm">
+                            + Add Track
+                            <input type="file" id="addLayerInput" accept="audio/*" hidden multiple>
+                        </label>
+                        <span class="mixer-hint">First track = core (beat detection). Click ★ to change.</span>
+                    </div>
+                    <div class="layer-list" id="layerList">
+                        <p class="keyframe-empty" id="layerEmpty">No audio layers. Click "+ Add Track" to add tracks.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="collapsible-header" id="headerPanning">
+                <span>🔊 Audio Panning</span><span class="collapse-icon">▼</span>
+            </div>
+            <div class="collapsible-content" id="contentPanning">
+                <div class="panning-panel">
+                    <div class="panning-header">
+                        <span class="toggle-section-label">Stereo Pan Control</span>
+                        <label class="toggle-chip active" style="margin-left:auto">
+                            <input type="checkbox" id="pannerEnabled" checked> Enabled
+                        </label>
+                    </div>
+                    <div class="pan-modes" id="panModes">
+                        <button class="pan-mode-btn active" data-mode="center">⚖️ Center</button>
+                        <button class="pan-mode-btn" data-mode="left">⬅️ Left Only</button>
+                        <button class="pan-mode-btn" data-mode="right">➡️ Right Only</button>
+                        <button class="pan-mode-btn" data-mode="loop">🔄 Loop L↔R</button>
+                        <button class="pan-mode-btn" data-mode="bounce">🏀 Bounce</button>
+                        <button class="pan-mode-btn" data-mode="random">🎲 Random</button>
+                        <button class="pan-mode-btn" data-mode="manual">🎚️ Manual</button>
+                    </div>
+                    <div class="pan-meter-container">
+                        <span class="pan-label">L</span>
+                        <div class="pan-meter">
+                            <div class="pan-meter-center"></div>
+                            <div class="pan-meter-indicator" id="panIndicator"></div>
+                        </div>
+                        <span class="pan-label">R</span>
+                        <span class="pan-value" id="panValueDisplay">0.00</span>
+                    </div>
+                    <div class="overlay-grid">
+                        <div class="setting-group">
+                            <label>Pan Speed (Hz)</label>
+                            <input type="range" id="panSpeed" min="0.1" max="5.0" step="0.1" value="1.0">
+                            <div class="range-value" id="panSpeedVal">1.0 Hz</div>
+                        </div>
+                        <div class="setting-group">
+                            <label>Intensity (Range)</label>
+                            <input type="range" id="panIntensity" min="0" max="1.0" step="0.05" value="1.0">
+                            <div class="range-value" id="panIntensityVal">100%</div>
+                        </div>
+                        <div class="setting-group">
+                            <label>Smoothing</label>
+                            <input type="range" id="panSmoothing" min="0.01" max="0.2" step="0.01" value="0.05">
+                            <div class="range-value" id="panSmoothingVal">0.05</div>
+                        </div>
+                        <div class="setting-group" id="manualPanGroup">
+                            <label>Manual Position</label>
+                            <input type="range" id="panManual" min="-1.0" max="1.0" step="0.01" value="0">
+                            <div class="range-value" id="panManualVal">Center</div>
+                        </div>
+                    </div>
+                    <div class="effects-presets">
+                        <button class="preset-btn" data-pan-preset="slow-sweep">Slow Sweep</button>
+                        <button class="preset-btn" data-pan-preset="fast-bounce">Fast Bounce</button>
+                        <button class="preset-btn" data-pan-preset="subtle-drift">Subtle Drift</button>
+                        <button class="preset-btn" data-pan-preset="hard-left">Hard Left</button>
+                        <button class="preset-btn" data-pan-preset="hard-right">Hard Right</button>
+                        <button class="preset-btn" data-pan-preset="chaos">Chaos</button>
+                        <button class="preset-btn" data-pan-preset="reset-pan">↺ Reset</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════ -->
+        <!-- TAB 3: EXPORT                               -->
+        <!-- ═══════════════════════════════════════════ -->
+        <div class="tab-content" id="tabExport" style="display:none">
+            <div class="collapsible-header" id="headerExport">
+                <span>🎥 Export Video</span><span class="collapse-icon">▼</span>
+            </div>
+            <div class="collapsible-content" id="contentExport">
+                <div class="export-controls">
+                    <div class="overlay-grid">
+                        <div class="setting-group">
+                            <label>Resolution</label>
+                            <select id="exportResolution">
+                                <option value="1920x1080">1920×1080 (Full HD)</option>
+                                <option value="1280x720" selected>1280×720 (HD)</option>
+                                <option value="1080x1080">1080×1080 (Square)</option>
+                                <option value="1080x1920">1080×1920 (Vertical/TikTok)</option>
+                                <option value="854x480">854×480 (SD)</option>
+                            </select>
+                        </div>
+                        <div class="setting-group">
+                            <label>Frame Rate</label>
+                            <select id="exportFps">
+                                <option value="60">60 FPS</option>
+                                <option value="30" selected>30 FPS</option>
+                                <option value="24">24 FPS (Cinema)</option>
+                            </select>
+                        </div>
+                        <div class="setting-group">
+                            <label>Duration</label>
+                            <select id="exportDuration">
+                                <option value="full">Full Track Length</option>
+                                <option value="60">60 seconds</option>
+                                <option value="30" selected>30 seconds</option>
+                                <option value="15">15 seconds</option>
+                                <option value="custom">Custom...</option>
+                            </select>
+                        </div>
+                        <div class="setting-group">
+                            <label>Include Audio</label>
+                            <select id="exportAudio">
+                                <option value="yes" selected>Yes (Music Track)</option>
+                                <option value="no">No (Silent Video)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="export-progress hidden" id="exportProgress">
+                        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                        <div class="progress-text" id="progressText">Preparing...</div>
+                    </div>
+                    <div class="export-buttons">
+                        <button class="btn-export" id="startExportBtn">🔴 Start Recording & Export</button>
+                        <button class="btn-danger hidden" id="cancelExportBtn">⏹ Cancel</button>
+                    </div>
+                    <p class="export-hint">Records media + beat animations + spectrum overlay into a downloadable video file.</p>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- end mainSection -->
+</div><!-- end container -->
+
+<script type="module" src="js/App.js"></script>
+</body>
+</html>
