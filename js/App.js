@@ -365,6 +365,7 @@ class App {
         const panelPairs = [
             ['spectrum', 'headerSpectrum', 'contentSpectrum'],
             ['detection', 'headerDetection', 'contentDetection'],
+            ['beatList', 'headerBeatList', 'contentBeatList'],
             ['panning', 'headerPanning', 'contentPanning'],
             ['export', 'headerExport', 'contentExport'],
         ];
@@ -383,6 +384,15 @@ class App {
             audio: document.getElementById('tabAudio'),
             export: document.getElementById('tabExport'),
         });
+        
+        // Follow playhead toggle for beat list
+        const followToggle = document.getElementById('followPlayheadToggle');
+        if (followToggle) {
+            followToggle.addEventListener('change', (e) => {
+                this.followPlayhead = e.target.checked;
+                this._triggerSave();
+            });
+        }
     }
 
     /* ── Gather current state for saving ───────────── */
@@ -756,10 +766,10 @@ class App {
             if (r.mediaFlipV) { this.reactor.setMediaFlipV(true); const el = document.getElementById('mediaFlipV'); if (el) el.classList.add('active'); }
         }
 
-        if (o.vizSyncBand) {
-            this.overlayViz.setVizSyncBand(o.vizSyncBand);
+        if (session.vizSyncBand) {
+            this.overlayViz.setVizSyncBand(session.vizSyncBand);
             const el = document.getElementById('vizSyncBand');
-            if (el) el.value = o.vizSyncBand;
+            if (el) el.value = session.vizSyncBand;
         }
 
         this._showRestoreToast();
@@ -1161,6 +1171,13 @@ class App {
         this.dom.timelineContainer.addEventListener('mouseleave', () => {
             if (!this.isDragging) this.dom.tooltip.style.opacity = '0';
         });
+
+        // Viz Canvas as audio scrubber
+        const vizPanel = document.querySelector('.viz-panel');
+        if (vizPanel) {
+            vizPanel.addEventListener('mousedown', (e) => this._onVizMouseDown(e));
+            vizPanel.addEventListener('click', (e) => this._onVizClick(e));
+        }
 
         // Audio end callback
         this.engine.onEnded = () => {
@@ -1982,6 +1999,18 @@ class App {
             this.dom.wfPlayhead.style.display = 'block';
             this.dom.wfPlayhead.style.left = `${wfPct}%`;
         }
+        
+        // Auto-scroll beat list to follow playhead if enabled
+        if (this.followPlayhead) {
+            this._scrollBeatListToCurrent(time);
+        }
+    }
+
+    _scrollBeatListToCurrent(currentTime) {
+        const activeEl = this.dom.beatList.querySelector('.beat-item.active');
+        if (activeEl) {
+            activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
     }
 
     _highlightBeat(currentTime) {
@@ -1998,6 +2027,55 @@ class App {
         const visibleFraction = start + pct * (end - start);
         const duration = this.useMixer ? this.mixer.getDuration() : this.engine.duration;
         return visibleFraction * duration;
+    }
+
+    _getTimeFromVizX(clientX) {
+        const vizCanvas = document.getElementById('vizCanvas');
+        if (!vizCanvas) return 0;
+        const rect = vizCanvas.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        const duration = this.useMixer ? this.mixer.getDuration() : this.engine.duration;
+        return pct * duration;
+    }
+
+    _onVizMouseDown(e) {
+        const hasAudio = this.useMixer ? this.mixer.layers.length > 0 : this.engine.buffer;
+        if (!hasAudio) return;
+        
+        // Right-click: delete nearest beat marker
+        if (e.button === 2) {
+            e.preventDefault();
+            const time = this._getTimeFromVizX(e.clientX);
+            this._removeBeatNearTime(time);
+            return;
+        }
+        
+        // Alt+Click: start drag-select for batch delete
+        if (e.altKey) {
+            e.preventDefault();
+            this._beatSelecting = true;
+            this._beatSelStart = this._getTimeFromVizX(e.clientX);
+            this._beatSelEnd = this._beatSelStart;
+            return;
+        }
+        
+        // Shift+Click: add beat marker
+        if (e.shiftKey) {
+            e.preventDefault();
+            const time = this._getTimeFromVizX(e.clientX);
+            this._addBeatAtTime(time);
+            return;
+        }
+        
+        // Normal click: seek
+        this.isDragging = true;
+        const time = this._getTimeFromVizX(e.clientX);
+        this._seekTo(time);
+    }
+
+    _onVizClick(e) {
+        // Handle click-specific actions if needed
+        // Currently handled in mousedown/up
     }
 
     _onDown(e) {
@@ -2123,6 +2201,13 @@ class App {
             e.stopPropagation();
             const hasAudio = this.useMixer ? this.mixer.layers.length > 0 : this.engine.buffer;
             if (hasAudio) this._togglePlay();
+            return;
+        }
+        
+        // ✅ Prevent Alt key default behavior (browser menu activation)
+        // This allows Alt+Click to work for beat selection without browser interference
+        if (e.code === 'AltLeft' || e.code === 'AltRight') {
+            e.preventDefault();
             return;
         }
         
