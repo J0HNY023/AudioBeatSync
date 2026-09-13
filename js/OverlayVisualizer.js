@@ -737,9 +737,10 @@ _drawECGCluster(ctx, data, w, h) {
     if (!data) return;
 
     const midY = h / 2;
-    const maxSpike = h * 0.35;
-    const points = 500;
-    const numTraces = 4; // Number of overlapping ECG traces
+    const maxSpike = h * this.ecgHeight;
+    const points = this.ecgVertices;
+    const numTraces = this.ecgTraces;
+    const spacing = this.ecgSpacing; // Controls spacing between spike positions
 
     // Calculate energy for different frequency bands
     const bandEnergy = (startRatio, endRatio) => {
@@ -755,48 +756,81 @@ _drawECGCluster(ctx, data, w, h) {
     const highMidEnergy = bandEnergy(0.25, 0.45);
     const presenceEnergy = bandEnergy(0.45, 0.65);
 
-    // Track burst states for each trace
-    if (!this._ecgBursts) this._ecgBursts = [];
-    if (!this._ecgLastBeats) this._ecgLastBeats = [0, 0, 0, 0];
+    // Fixed spike positions across the canvas (like spectrum bars)
+    const numSpikes = Math.floor(1 / spacing);
+    const spikePositions = [];
+    for (let s = 0; s < numSpikes; s++) {
+        spikePositions.push((s + 0.5) / numSpikes); // Center of each section
+    }
+
+    // Track activation state for each spike position per trace
+    if (!this._ecgSpikes) this._ecgSpikes = [];
+    if (this._ecgSpikes.length !== numTraces) {
+        this._ecgSpikes = Array(numTraces).fill(null).map(() => []);
+    }
+    for (let t = 0; t < numTraces; t++) {
+        if (this._ecgSpikes[t].length !== numSpikes) {
+            this._ecgSpikes[t] = Array(numSpikes).fill(null);
+        }
+    }
 
     const now = performance.now() / 1000;
-    const beatThreshold = 0.25;
-    const minBeatInterval = 0.15;
+    const beatThreshold = 0.22;
+    const minBeatInterval = 0.12;
     const ekgDuration = 0.35;
 
     const energies = [bassEnergy, midEnergy, highMidEnergy, presenceEnergy];
-    const colors = [
+    const baseColors = [
         { outer: 'rgba(255,80,80,0.08)', mid: 'rgba(255,80,80,0.3)', inner: 'rgba(255,200,200,0.95)' },
         { outer: 'rgba(80,200,255,0.08)', mid: 'rgba(80,200,255,0.3)', inner: 'rgba(200,240,255,0.95)' },
         { outer: 'rgba(80,255,150,0.08)', mid: 'rgba(80,255,150,0.3)', inner: 'rgba(200,255,220,0.95)' },
         { outer: 'rgba(255,180,80,0.08)', mid: 'rgba(255,180,80,0.3)', inner: 'rgba(255,240,200,0.95)' },
+        { outer: 'rgba(200,80,255,0.08)', mid: 'rgba(200,80,255,0.3)', inner: 'rgba(240,200,255,0.95)' },
+        { outer: 'rgba(255,80,180,0.08)', mid: 'rgba(255,80,180,0.3)', inner: 'rgba(255,200,230,0.95)' },
+        { outer: 'rgba(80,255,200,0.08)', mid: 'rgba(80,255,200,0.3)', inner: 'rgba(200,255,240,0.95)' },
+        { outer: 'rgba(255,200,80,0.08)', mid: 'rgba(255,200,80,0.3)', inner: 'rgba(255,240,180,0.95)' },
     ];
-    const verticalOffsets = [-maxSpike * 0.15, -maxSpike * 0.05, maxSpike * 0.05, maxSpike * 0.15];
-
-    // Trigger bursts for each band
+    const verticalOffsets = [];
+    const traceSpacing = maxSpike * 0.3;
+    const startY = midY - ((numTraces - 1) * traceSpacing) / 2;
     for (let t = 0; t < numTraces; t++) {
-        if (energies[t] > beatThreshold && (now - this._ecgLastBeats[t]) > minBeatInterval) {
-            this._ecgBursts[t] = {
-                startTime: now,
-                phase: 0,
-                intensity: Math.min(1.0, 0.4 + (energies[t] - beatThreshold) * 1.2),
-            };
-            this._ecgLastBeats[t] = now;
-        }
+        verticalOffsets.push(startY + t * traceSpacing);
+    }
 
-        // Update burst animation
-        if (this._ecgBursts[t]) {
-            this._ecgBursts[t].phase += (1 / 60) / ekgDuration;
-            if (this._ecgBursts[t].phase >= 1.0) {
-                this._ecgBursts[t] = null;
+    // Check each spike position for activation based on energy
+    for (let t = 0; t < numTraces; t++) {
+        for (let s = 0; s < numSpikes; s++) {
+            // Each trace responds to slightly different frequency ranges for variety
+            const energyVaried = energies[t % energies.length] * (0.8 + Math.random() * 0.4);
+            
+            if (energyVaried > beatThreshold && (!this._ecgSpikes[t][s] || (now - this._ecgSpikes[t][s].startTime) > minBeatInterval)) {
+                // Stagger activation timing across spikes
+                const delayOffset = s * 0.02 * (1 - energies[t % energies.length]);
+                const activationTime = now - delayOffset;
+                
+                if (!this._ecgSpikes[t][s] || (activationTime - this._ecgSpikes[t][s].startTime) > minBeatInterval) {
+                    this._ecgSpikes[t][s] = {
+                        startTime: activationTime,
+                        phase: 0,
+                        intensity: Math.min(1.0, 0.5 + (energyVaried - beatThreshold) * 1.5),
+                    };
+                }
+            }
+
+            // Update burst animation for each spike
+            if (this._ecgSpikes[t][s]) {
+                this._ecgSpikes[t][s].phase += (1 / 60) / ekgDuration;
+                if (this._ecgSpikes[t][s].phase >= 1.0) {
+                    this._ecgSpikes[t][s] = null;
+                }
             }
         }
     }
 
-    // Draw each ECG trace
+    // Draw each ECG trace at its fixed vertical position
     for (let traceIdx = 0; traceIdx < numTraces; traceIdx++) {
-        const traceY = midY + verticalOffsets[traceIdx];
-        const color = colors[traceIdx];
+        const traceY = verticalOffsets[traceIdx];
+        const color = baseColors[traceIdx % baseColors.length];
 
         ctx.beginPath();
         for (let i = 0; i <= points; i++) {
@@ -804,61 +838,70 @@ _drawECGCluster(ctx, data, w, h) {
             const x = t * w;
             let y = traceY;
 
-            if (this._ecgBursts[traceIdx]) {
-                const burstPos = this._ecgBursts[traceIdx].phase;
-                const burstWidth = 0.15;
+            // Check contribution from each spike at this x position
+            for (let s = 0; s < numSpikes; s++) {
+                const spikeX = spikePositions[s];
+                const spikeWidth = spacing * 0.8; // Width of each spike zone
 
-                const distFromBurst = Math.abs(t - burstPos);
-                if (distFromBurst < burstWidth / 2) {
-                    const localT = (t - (burstPos - burstWidth / 2)) / burstWidth;
+                if (this._ecgSpikes[traceIdx][s]) {
+                    const distFromSpike = Math.abs(t - spikeX);
+                    
+                    if (distFromSpike < spikeWidth / 2) {
+                        const localT = (t - (spikeX - spikeWidth / 2)) / spikeWidth;
+                        const burstPhase = this._ecgSpikes[traceIdx][s].phase;
 
-                    // Complex multi-peak ECG waveform (P-Q-R-S-T)
-                    let ekgVal = 0;
+                        // Complex multi-peak ECG waveform (P-Q-R-S-T) that plays at fixed position
+                        let ekgVal = 0;
 
-                    // P wave (small bump before QRS)
-                    if (localT >= 0.05 && localT < 0.15) {
-                        const pT = (localT - 0.05) / 0.1;
-                        ekgVal = Math.sin(pT * Math.PI) * 0.15;
-                    }
-                    // Q dip (small down)
-                    else if (localT >= 0.15 && localT < 0.22) {
-                        ekgVal = -0.15 * ((localT - 0.15) / 0.07);
-                    }
-                    // R spike (SHARP UP - main peak)
-                    else if (localT >= 0.22 && localT < 0.38) {
-                        const spikeT = (localT - 0.22) / 0.16;
-                        ekgVal = spikeT < 0.5
-                            ? spikeT * 2 * 1.0
-                            : (1 - spikeT) * 2 * 1.0;
-                    }
-                    // S spike (SHARP DOWN - main trough)
-                    else if (localT >= 0.38 && localT < 0.52) {
-                        const spikeT = (localT - 0.38) / 0.14;
-                        ekgVal = spikeT < 0.5
-                            ? spikeT * 2 * -0.7
-                            : (1 - spikeT) * 2 * -0.7;
-                    }
-                    // T wave (rounded bump after QRS)
-                    else if (localT >= 0.52 && localT < 0.72) {
-                        const tT = (localT - 0.52) / 0.2;
-                        ekgVal = Math.sin(tT * Math.PI) * 0.25;
-                    }
+                        // P wave (small bump before QRS)
+                        if (localT >= 0.05 && localT < 0.15) {
+                            const pT = (localT - 0.05) / 0.1;
+                            ekgVal = Math.sin(pT * Math.PI) * 0.15;
+                        }
+                        // Q dip (small down)
+                        else if (localT >= 0.15 && localT < 0.22) {
+                            ekgVal = -0.15 * ((localT - 0.15) / 0.07);
+                        }
+                        // R spike (SHARP UP - main peak)
+                        else if (localT >= 0.22 && localT < 0.38) {
+                            const spikeT = (localT - 0.22) / 0.16;
+                            ekgVal = spikeT < 0.5
+                                ? spikeT * 2 * 1.0
+                                : (1 - spikeT) * 2 * 1.0;
+                        }
+                        // S spike (SHARP DOWN - main trough)
+                        else if (localT >= 0.38 && localT < 0.52) {
+                            const spikeT = (localT - 0.38) / 0.14;
+                            ekgVal = spikeT < 0.5
+                                ? spikeT * 2 * -0.7
+                                : (1 - spikeT) * 2 * -0.7;
+                        }
+                        // T wave (rounded bump after QRS)
+                        else if (localT >= 0.52 && localT < 0.72) {
+                            const tT = (localT - 0.52) / 0.2;
+                            ekgVal = Math.sin(tT * Math.PI) * 0.25;
+                        }
 
-                    // Add dense multi-vertex detail (small oscillations)
-                    if (localT >= 0.1 && localT < 0.8) {
-                        const detailFreq = 30;
-                        const detailAmp = 0.08 * (1 - Math.abs(localT - 0.45) * 2);
-                        ekgVal += Math.sin((localT - 0.1) * detailFreq * Math.PI) * detailAmp;
-                    }
+                        // Add dense multi-vertex detail (small oscillations)
+                        if (localT >= 0.1 && localT < 0.8) {
+                            const detailFreq = 30;
+                            const detailAmp = 0.08 * (1 - Math.abs(localT - 0.45) * 2);
+                            ekgVal += Math.sin((localT - 0.1) * detailFreq * Math.PI) * detailAmp;
+                        }
 
-                    // Fade at edges
-                    let fade = 1;
-                    const edgeFade = distFromBurst / (burstWidth / 2);
-                    if (edgeFade > 0.7) {
-                        fade = (1 - edgeFade) * 3.33;
-                    }
+                        // Fade at edges of spike zone
+                        let fade = 1;
+                        const edgeFade = distFromSpike / (spikeWidth / 2);
+                        if (edgeFade > 0.7) {
+                            fade = (1 - edgeFade) * 3.33;
+                        }
 
-                    y = traceY - ekgVal * maxSpike * this._ecgBursts[traceIdx].intensity * fade;
+                        // Apply burst phase to control when the waveform appears
+                        if (burstPhase >= 0 && burstPhase <= 1) {
+                            const phaseFade = Math.sin(burstPhase * Math.PI);
+                            y = traceY - ekgVal * maxSpike * this._ecgSpikes[traceIdx][s].intensity * fade * phaseFade;
+                        }
+                    }
                 }
             }
 
