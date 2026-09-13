@@ -755,6 +755,11 @@ _drawECGCluster(ctx, data, w, h) {
     const midEnergy = bandEnergy(0.08, 0.25);
     const highMidEnergy = bandEnergy(0.25, 0.45);
     const presenceEnergy = bandEnergy(0.45, 0.65);
+    const trebleEnergy = bandEnergy(0.65, 0.85); // High frequencies - cymbals, hi-hats
+    const vocalEnergy = bandEnergy(0.35, 0.55);   // Vocal range
+    
+    // HYPER-REACTIVE: Focus on high-frequency content for sharp peaks
+    const highFreqEnergy = (trebleEnergy * 1.8 + presenceEnergy * 1.4 + vocalEnergy * 1.2) / 3;
 
     // Fixed spike positions across the canvas (like spectrum bars)
     const numSpikes = Math.floor(1 / spacing);
@@ -775,11 +780,13 @@ _drawECGCluster(ctx, data, w, h) {
     }
 
     const now = performance.now() / 1000;
-    const beatThreshold = 0.22;
-    const minBeatInterval = 0.12;
-    const ekgDuration = 0.35;
+    const beatThreshold = 0.18; // Lower threshold for more reactivity
+    const minBeatInterval = 0.08; // Faster response
+    const ekgDuration = 0.25; // Shorter duration for snappier response
 
-    const energies = [bassEnergy, midEnergy, highMidEnergy, presenceEnergy];
+    // Each spike responds to specific high-frequency bin for precise localization
+    const freqBinsPerSpike = Math.floor(data.length * 0.3 / numSpikes);
+    
     const baseColors = [
         { outer: 'rgba(255,80,80,0.08)', mid: 'rgba(255,80,80,0.3)', inner: 'rgba(255,200,200,0.95)' },
         { outer: 'rgba(80,200,255,0.08)', mid: 'rgba(80,200,255,0.3)', inner: 'rgba(200,240,255,0.95)' },
@@ -797,22 +804,37 @@ _drawECGCluster(ctx, data, w, h) {
         verticalOffsets.push(startY + t * traceSpacing);
     }
 
-    // Check each spike position for activation based on energy
+    // Check each spike position for activation based on HIGH-FREQUENCY energy
     for (let t = 0; t < numTraces; t++) {
         for (let s = 0; s < numSpikes; s++) {
-            // Each trace responds to slightly different frequency ranges for variety
-            const energyVaried = energies[t % energies.length] * (0.8 + Math.random() * 0.4);
+            // Get specific frequency bin for this spike position (high-frequency focused)
+            const freqStart = Math.floor(data.length * (0.35 + (s / numSpikes) * 0.5));
+            const freqEnd = Math.min(data.length, freqStart + freqBinsPerSpike);
             
+            let localHighFreqEnergy = 0;
+            for (let fi = freqStart; fi < freqEnd && fi < data.length; fi++) {
+                localHighFreqEnergy += data[fi] / 255;
+            }
+            localHighFreqEnergy /= (freqEnd - freqStart);
+            
+            // Add trace variation
+            const traceOffset = (t * 0.1) % 0.3;
+            const energyVaried = localHighFreqEnergy * (1.0 + traceOffset + Math.random() * 0.3);
+            
+            // HYPER-REACTIVE: Lower threshold, amplified response to treble
             if (energyVaried > beatThreshold && (!this._ecgSpikes[t][s] || (now - this._ecgSpikes[t][s].startTime) > minBeatInterval)) {
-                // Stagger activation timing across spikes
-                const delayOffset = s * 0.02 * (1 - energies[t % energies.length]);
+                // Stagger activation timing across spikes slightly
+                const delayOffset = s * 0.01 * (1 - energyVaried);
                 const activationTime = now - delayOffset;
                 
                 if (!this._ecgSpikes[t][s] || (activationTime - this._ecgSpikes[t][s].startTime) > minBeatInterval) {
                     this._ecgSpikes[t][s] = {
                         startTime: activationTime,
                         phase: 0,
-                        intensity: Math.min(1.0, 0.5 + (energyVaried - beatThreshold) * 1.5),
+                        // Intensity scales dramatically with high-frequency content
+                        intensity: Math.min(1.5, 0.4 + (energyVaried - beatThreshold) * 2.5),
+                        // Store the raw energy for vertex complexity
+                        rawEnergy: energyVaried,
                     };
                 }
             }
@@ -849,57 +871,89 @@ _drawECGCluster(ctx, data, w, h) {
                     if (distFromSpike < spikeWidth / 2) {
                         const localT = (t - (spikeX - spikeWidth / 2)) / spikeWidth;
                         const burstPhase = this._ecgSpikes[traceIdx][s].phase;
+                        const spikeIntensity = this._ecgSpikes[traceIdx][s].intensity;
+                        const rawEnergy = this._ecgSpikes[traceIdx][s].rawEnergy || 0;
+
+                        // HYPER-REACTIVE: Amplitude explicitly mapped to high-frequency energy
+                        // Higher treble = taller spikes with more dramatic peaks
+                        const amplitudeScale = 0.5 + rawEnergy * 2.2; // Scales from 0.5 to ~2.7
+                        
+                        // VERTEX COMPLEXITY: More high-freq = denser, sharper zig-zags
+                        // Cymbals/percussion create razor-sharp multi-peak clusters
+                        const vertexDensity = 15 + Math.floor(rawEnergy * 80); // 15-95 oscillations
+                        const sharpnessFactor = 0.3 + rawEnergy * 1.8; // Sharper peaks with more energy
 
                         // Complex multi-peak ECG waveform (P-Q-R-S-T) that plays at fixed position
                         let ekgVal = 0;
 
-                        // P wave (small bump before QRS)
+                        // P wave (small bump before QRS) - scales with energy
                         if (localT >= 0.05 && localT < 0.15) {
                             const pT = (localT - 0.05) / 0.1;
-                            ekgVal = Math.sin(pT * Math.PI) * 0.15;
+                            ekgVal = Math.sin(pT * Math.PI) * 0.15 * amplitudeScale;
                         }
-                        // Q dip (small down)
+                        // Q dip (small down) - deeper with more energy
                         else if (localT >= 0.15 && localT < 0.22) {
-                            ekgVal = -0.15 * ((localT - 0.15) / 0.07);
+                            ekgVal = -0.15 * ((localT - 0.15) / 0.07) * amplitudeScale;
                         }
-                        // R spike (SHARP UP - main peak)
+                        // R spike (RAZOR-SHARP UP - main peak) - HYPER-REACTIVE to treble
                         else if (localT >= 0.22 && localT < 0.38) {
                             const spikeT = (localT - 0.22) / 0.16;
-                            ekgVal = spikeT < 0.5
-                                ? spikeT * 2 * 1.0
-                                : (1 - spikeT) * 2 * 1.0;
+                            // Asymmetric sharp peak - faster rise, slower fall for percussion feel
+                            const riseSharp = spikeT < 0.3 ? Math.pow(spikeT / 0.3, 0.5) : 1;
+                            const fallSharp = spikeT >= 0.3 ? Math.pow((1 - spikeT) / 0.7, 0.7) : 0;
+                            ekgVal = (riseSharp + fallSharp) * 1.2 * amplitudeScale * sharpnessFactor;
                         }
-                        // S spike (SHARP DOWN - main trough)
+                        // S spike (RAZOR-SHARP DOWN - main trough) - reacts to vocal/treble
                         else if (localT >= 0.38 && localT < 0.52) {
                             const spikeT = (localT - 0.38) / 0.14;
-                            ekgVal = spikeT < 0.5
-                                ? spikeT * 2 * -0.7
-                                : (1 - spikeT) * 2 * -0.7;
+                            const riseSharp = spikeT < 0.4 ? Math.pow(spikeT / 0.4, 0.6) : 1;
+                            const fallSharp = spikeT >= 0.4 ? Math.pow((1 - spikeT) / 0.6, 0.8) : 0;
+                            ekgVal = -(riseSharp + fallSharp) * 0.9 * amplitudeScale * sharpnessFactor;
                         }
-                        // T wave (rounded bump after QRS)
+                        // T wave (rounded bump after QRS) - softer, but still reactive
                         else if (localT >= 0.52 && localT < 0.72) {
                             const tT = (localT - 0.52) / 0.2;
-                            ekgVal = Math.sin(tT * Math.PI) * 0.25;
+                            ekgVal = Math.sin(tT * Math.PI) * 0.25 * amplitudeScale;
                         }
 
-                        // Add dense multi-vertex detail (small oscillations)
-                        if (localT >= 0.1 && localT < 0.8) {
-                            const detailFreq = 30;
-                            const detailAmp = 0.08 * (1 - Math.abs(localT - 0.45) * 2);
-                            ekgVal += Math.sin((localT - 0.1) * detailFreq * Math.PI) * detailAmp;
+                        // DENSE MULTI-VERTEX CLUSTER: Razor-sharp zig-zags for high-frequencies
+                        // Creates complex oscillating patterns on cymbals, hi-hats, percussion
+                        if (localT >= 0.1 && localT < 0.85) {
+                            // Multiple overlapping sine waves for chaotic high-frequency texture
+                            let clusterVal = 0;
+                            for (let v = 0; v < 3; v++) {
+                                const harmonicFreq = vertexDensity * (1 + v * 0.37);
+                                const harmonicAmp = (1 / (v + 1)) * (0.12 * rawEnergy * sharpnessFactor);
+                                const phaseShift = v * 0.7;
+                                clusterVal += Math.sin((localT - 0.1) * harmonicFreq * Math.PI + phaseShift) * harmonicAmp;
+                            }
+                            
+                            // Add random sharp jitter for ultra-high frequencies (cymbals shimmer)
+                            if (rawEnergy > 0.4) {
+                                const jitterFreq = vertexDensity * 2.5;
+                                const jitterAmp = (rawEnergy - 0.4) * 0.06 * sharpnessFactor;
+                                clusterVal += Math.sin((localT - 0.1) * jitterFreq * Math.PI) * jitterAmp;
+                            }
+                            
+                            // Apply cluster with envelope (strongest in the middle of QRS complex)
+                            const clusterEnvelope = Math.sin((localT - 0.1) * Math.PI / 0.75);
+                            ekgVal += clusterVal * Math.max(0, clusterEnvelope);
                         }
 
-                        // Fade at edges of spike zone
+                        // Fade at edges of spike zone smoothly
                         let fade = 1;
                         const edgeFade = distFromSpike / (spikeWidth / 2);
-                        if (edgeFade > 0.7) {
-                            fade = (1 - edgeFade) * 3.33;
+                        if (edgeFade > 0.6) {
+                            fade = Math.pow((1 - edgeFade) / 0.4, 2);
                         }
 
                         // Apply burst phase to control when the waveform appears
                         if (burstPhase >= 0 && burstPhase <= 1) {
-                            const phaseFade = Math.sin(burstPhase * Math.PI);
-                            y = traceY - ekgVal * maxSpike * this._ecgSpikes[traceIdx][s].intensity * fade * phaseFade;
+                            // Fast attack, slow decay for percussive feel
+                            const attackDecay = burstPhase < 0.15 
+                                ? burstPhase / 0.15  // Quick attack
+                                : 1 - Math.pow((burstPhase - 0.15) / 0.85, 1.5); // Exponential decay
+                            y = traceY - ekgVal * maxSpike * spikeIntensity * fade * attackDecay;
                         }
                     }
                 }
@@ -908,7 +962,7 @@ _drawECGCluster(ctx, data, w, h) {
             i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
         }
 
-        // Multi-layer stroke for glow effect
+        // Multi-layer stroke for glow effect - medical monitor styling
         ctx.strokeStyle = color.outer;
         ctx.lineWidth = 8;
         ctx.lineCap = 'round';
