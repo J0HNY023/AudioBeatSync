@@ -1,34 +1,81 @@
 /**
- * Renders a real-time FFT visualizer onto a canvas that overlays the media panel.
- * Supports transform controls: position, scale, rotation, opacity, blend mode.
+ * CONFIG - Easily adjustable parameters for the Synthwave ECG Visualizer
  */
+const CONFIG = {
+    // Heart Settings
+    heart: {
+        baseSize: 120,          // Base radius of the heart
+        pulseScale: 1.4,        // Max scale factor on beat
+        color: '#ff0066',       // Neon pink/magenta
+        glowBlur: 25,           // Shadow blur intensity
+        glowStrength: 0.8       // Shadow opacity
+    },
+    
+    // ECG Waveform Settings
+    ecg: {
+        speed: 15,              // Pixels per frame movement speed
+        peakHeight: 80,         // Base height of R-spike
+        beatMultiplier: 2.5,    // How much bass boosts the spike
+        lineColor: '#ff3333',   // Reddish core
+        glowColor: '#ffffff',   // White outer glow
+        lineWidth: 3,           // Thickness of the line
+        segments: 100           // Number of points in the wave buffer
+    },
+
+    // Audio Sensitivity
+    audio: {
+        fftSize: 2048,          // Resolution of frequency data
+        bassThreshold: 220,     // Frequency bin index for bass detection
+        sensitivity: 1.5        // Global gain multiplier for visual scaling
+    },
+
+    // UI / HUD
+    ui: {
+        barCount: 64,           // Number of equalizer bars
+        barColor: '#00f0ff',    // Cyan for bars
+        textColor: '#00f0ff',   // Cyan for text
+        trackName: 'AUDIO TRACK: SYNTHETIC PULSE'
+    }
+};
+
 export class OverlayVisualizer {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.width = 0;
         this.height = 0;
-        this.mode = 'grassHeart';
-        this.particles = [];
-
+        
         // Transform state
         this.opacity = 0.7;
         this.blendMode = 'screen';
         this.scaleX = 1.0;
         this.scaleY = 1.0;
-        this.offsetX = 0;   // percentage -50 to 50
+        this.offsetX = 0;
         this.offsetY = 0;
-        this.rotation = 0;  // degrees
+        this.rotation = 0;
         this.enabled = true;
 
         // Color settings
-        this.colorMode = 'rainbow';    // 'rainbow' | 'solid' | 'gradient' | 'beat'
-        this.primaryColor = '#00d4ff'; // Solid/gradient start
-        this.secondaryColor = '#ff3366'; // Gradient end
-        this.saturation = 100;         // 0-100
-        this.lightness = 55;           // 20-80
+        this.colorMode = 'rainbow';
+        this.primaryColor = '#00d4ff';
+        this.secondaryColor = '#ff3366';
+        this.saturation = 100;
+        this.lightness = 55;
 
         this.vizSyncBand = 'bass';
+        
+        // ECG Wave State
+        this.wavePoints = [];
+        this.waveOffset = 0;
+        
+        // Beat pulse state
+        this.beatPulse = 0;
+        this.lastBeatTime = 0;
+        
+        // Initialize wave buffer
+        for (let i = 0; i < CONFIG.ecg.segments; i++) {
+            this.wavePoints.push(0);
+        }
     }
 
     resize(displayWidth, displayHeight) {
@@ -40,18 +87,14 @@ export class OverlayVisualizer {
         this.height = displayHeight;
     }
 
-    // Add setter:
     setVizSyncBand(band) { this.vizSyncBand = band; }
-
-    setMode(mode) { this.mode = mode; this.particles = []; }
+    setMode(mode) { /* kept for compatibility */ }
     setOpacity(v) { this.opacity = Math.max(0, Math.min(1, v)); }
     setBlendMode(m) { this.blendMode = m; }
     setScale(x, y) { this.scaleX = x; this.scaleY = y; }
     setOffset(x, y) { this.offsetX = x; this.offsetY = y; }
     setRotation(deg) { this.rotation = deg; }
     setEnabled(v) { this.enabled = v; this.canvas.style.display = v ? 'block' : 'none'; }
-
-    // Color setters
     setColorMode(m) { this.colorMode = m; }
     setPrimaryColor(c) { this.primaryColor = c; }
     setSecondaryColor(c) { this.secondaryColor = c; }
@@ -59,16 +102,7 @@ export class OverlayVisualizer {
     setLightness(v) { this.lightness = Math.max(20, Math.min(80, v)); }
 
     /**
-     * Get color for a bar/element based on current color mode.
-     * @param {number} index - bar index
-     * @param {number} total - total bars
-     * @param {number} value - 0-1 amplitude
-     * @returns {string} CSS color string
-     */
-
-    /**
      * Get the frequency data slice for the current viz sync band.
-     * Returns { data: Uint8Array subset, energy: 0-1 normalized average }
      */
     _getSyncData(fullData) {
         if (!fullData) return { slice: null, energy: 0 };
@@ -77,8 +111,8 @@ export class OverlayVisualizer {
         let start = 0, end = len;
 
         switch (this.vizSyncBand) {
-            case 'sub-bass':  start = 0;             end = Math.floor(len * 0.02); break;  // ~20-60Hz
-            case 'bass':      start = 0;             end = Math.floor(len * 0.08); break;  // ~60-250Hz
+            case 'sub-bass':  start = 0;             end = Math.floor(len * 0.02); break;
+            case 'bass':      start = 0;             end = Math.floor(len * 0.08); break;
             case 'low-mid':   start = Math.floor(len * 0.08); end = Math.floor(len * 0.15); break;
             case 'mid':       start = Math.floor(len * 0.15); end = Math.floor(len * 0.35); break;
             case 'high-mid':  start = Math.floor(len * 0.35); end = Math.floor(len * 0.55); break;
@@ -95,6 +129,259 @@ export class OverlayVisualizer {
 
         return { slice, energy };
     }
+
+    applyTransform() {
+        this.canvas.style.opacity = this.opacity;
+        this.canvas.style.mixBlendMode = this.blendMode;
+        this.canvas.style.transform =
+            `translate(${this.offsetX}%, ${this.offsetY}%) scale(${this.scaleX}, ${this.scaleY}) rotate(${this.rotation}deg)`;
+    }
+
+    render(freqData, timeData, beats = [], currentTime = 0) {
+        if (!this.enabled || !freqData) return;
+        
+        const { ctx, width: w, height: h } = this;
+        ctx.clearRect(0, 0, w, h);
+
+        // 1. Background: Pitch black with synthwave atmospheric glow
+        ctx.fillStyle = '#050505';
+        ctx.fillRect(0, 0, w, h);
+        
+        // Subtle radial gradient for atmosphere
+        const grad = ctx.createRadialGradient(w/2, h/2, 100, w/2, h/2, w);
+        grad.addColorStop(0, 'rgba(20, 0, 20, 0.2)');
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Calculate Audio Metrics
+        let bassEnergy = 0;
+        let midEnergy = 0;
+        const bassRange = Math.floor(freqData.length * 0.1);
+        for (let i = 0; i < bassRange; i++) {
+            bassEnergy += freqData[i];
+        }
+        bassEnergy = (bassEnergy / bassRange) / 255;
+        
+        const midStart = Math.floor(freqData.length * 0.1);
+        const midEnd = Math.floor(freqData.length * 0.5);
+        for (let i = midStart; i < midEnd; i++) {
+            midEnergy += freqData[i];
+        }
+        midEnergy = (midEnergy / (midEnd - midStart)) / 255;
+
+        // Beat Detection Logic
+        const now = Date.now();
+        const isBeat = bassEnergy > 0.6 && (now - this.lastBeatTime) > 100;
+        if (isBeat) {
+            this.lastBeatTime = now;
+            this.beatPulse = 1.0;
+        }
+        this.beatPulse *= 0.92;
+
+        const currentPulse = 1 + (this.beatPulse * (CONFIG.heart.pulseScale - 1));
+        const ecgIntensity = 1 + (bassEnergy * CONFIG.ecg.beatMultiplier);
+
+        // 2. Draw ECG Waveform (spans left to right, passes through heart)
+        this._drawECGWave(ctx, w, h, ecgIntensity, bassEnergy, currentTime);
+
+        // 3. Draw Central Crystalline Heart (with transparency so ECG shows through)
+        this._drawCrystallineHeart(ctx, w, h, currentPulse, bassEnergy);
+
+        // 4. Draw HUD Equalizer & Info
+        this._drawHUD(ctx, w, h, bassEnergy, midEnergy, currentTime);
+    }
+
+    /**
+     * Generates the classic ECG P-QRS-T wave shape mathematically
+     */
+    _getECGValue(t, intensity) {
+        const cycle = t % 1;
+        let val = 0;
+        
+        // P Wave (small bump) ~0.15
+        if (cycle > 0.1 && cycle < 0.25) {
+            val += Math.sin((cycle - 0.1) * Math.PI * 4) * 0.15;
+        }
+        
+        // Q Dip (small down) ~0.25
+        if (cycle > 0.25 && cycle < 0.3) {
+            val -= Math.sin((cycle - 0.25) * Math.PI * 10) * 0.1;
+        }
+        
+        // R Spike (Huge up) ~0.3 - The main beat
+        if (cycle > 0.3 && cycle < 0.45) {
+            const spikeT = (cycle - 0.3) / 0.15;
+            val += Math.pow(Math.sin(spikeT * Math.PI), 3) * 1.0 * intensity;
+        }
+        
+        // S Dip (down after R) ~0.45
+        if (cycle > 0.45 && cycle < 0.55) {
+            val -= Math.sin((cycle - 0.45) * Math.PI * 5) * 0.15;
+        }
+        
+        // T Wave (medium bump recovery) ~0.6
+        if (cycle > 0.55 && cycle < 0.8) {
+            val += Math.sin((cycle - 0.55) * Math.PI * 2.5) * 0.25;
+        }
+        
+        return val;
+    }
+
+    _drawECGWave(ctx, w, h, intensity, audioLevel, currentTime) {
+        const centerY = h / 2;
+        const segmentWidth = w / CONFIG.ecg.segments;
+        
+        this.waveOffset += CONFIG.ecg.speed;
+        if (this.waveOffset >= segmentWidth) {
+            this.waveOffset = 0;
+            this.wavePoints.shift();
+            const timeFactor = currentTime * 2;
+            const rawVal = this._getECGValue(timeFactor, intensity);
+            this.wavePoints.push(rawVal);
+        }
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.lineWidth = CONFIG.ecg.lineWidth;
+        
+        // Glow effect: White core, red outer
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = CONFIG.ecg.glowColor;
+        ctx.strokeStyle = CONFIG.ecg.lineColor;
+
+        for (let i = 0; i < this.wavePoints.length; i++) {
+            const x = (i * segmentWidth) - this.waveOffset;
+            const y = centerY - (this.wavePoints[i] * CONFIG.ecg.peakHeight * (1 + audioLevel * 0.2));
+            
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        
+        ctx.lineTo(w, centerY);
+        ctx.stroke();
+        
+        // Secondary faint grid line
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(255, 50, 50, 0.1)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, centerY);
+        ctx.lineTo(w, centerY);
+        ctx.stroke();
+        
+        ctx.restore();
+    }
+
+    _drawCrystallineHeart(ctx, w, h, scale, audioLevel) {
+        const cx = w / 2;
+        const cy = h / 2;
+        const baseSize = CONFIG.heart.baseSize * scale;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        
+        // Glow
+        ctx.shadowBlur = CONFIG.heart.glowBlur * (1 + audioLevel);
+        ctx.shadowColor = CONFIG.heart.color;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.strokeStyle = CONFIG.heart.color;
+        ctx.lineWidth = 3;
+
+        // Define Heart Shape Path (parametric equation)
+        ctx.beginPath();
+        for (let i = 0; i <= Math.PI * 2; i += 0.05) {
+            const x = 16 * Math.pow(Math.sin(i), 3);
+            const y = -(13 * Math.cos(i) - 5 * Math.cos(2*i) - 2 * Math.cos(3*i) - Math.cos(4*i));
+            
+            const px = x * (baseSize / 16);
+            const py = y * (baseSize / 16);
+            
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Crystalline facets (internal lines)
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(255, 0, 100, 0.4)';
+        
+        // Vertical facet
+        ctx.beginPath();
+        ctx.moveTo(0, -baseSize * 0.8);
+        ctx.lineTo(0, baseSize * 0.6);
+        ctx.stroke();
+
+        // Horizontal facet
+        ctx.beginPath();
+        ctx.moveTo(-baseSize * 0.8, 0);
+        ctx.lineTo(baseSize * 0.8, 0);
+        ctx.stroke();
+        
+        // Diagonal facets
+        ctx.beginPath();
+        ctx.moveTo(-baseSize * 0.5, -baseSize * 0.5);
+        ctx.lineTo(baseSize * 0.5, baseSize * 0.5);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(baseSize * 0.5, -baseSize * 0.5);
+        ctx.lineTo(-baseSize * 0.5, baseSize * 0.5);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    _drawHUD(ctx, w, h, bass, mids, currentTime) {
+        const barCount = CONFIG.ui.barCount;
+        const maxBarHeight = h * 0.15;
+        
+        ctx.save();
+        ctx.font = '14px "Courier New", monospace';
+        ctx.fillStyle = CONFIG.ui.textColor;
+        ctx.textBaseline = 'bottom';
+        
+        // Track Info
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = CONFIG.ui.textColor;
+        ctx.fillText(CONFIG.ui.trackName, 20, h - 10);
+        
+        // Timestamp Counter
+        const mins = Math.floor(currentTime / 60).toString().padStart(2, '0');
+        const secs = Math.floor(currentTime % 60).toString().padStart(2, '0');
+        ctx.fillText(`[${mins}:${secs}]`, w - 80, h - 10);
+
+        // Equalizer Bars
+        ctx.shadowBlur = 5;
+        ctx.shadowColor = CONFIG.ui.barColor;
+        ctx.fillStyle = CONFIG.ui.barColor;
+        
+        const startX = w * 0.4;
+        const availableWidth = w * 0.55;
+        const dynamicBarWidth = availableWidth / barCount;
+
+        for (let i = 0; i < barCount; i++) {
+            const value = (Math.sin(i * 0.5 + currentTime * 3) * 0.5 + 0.5) * 255 * (bass + 0.3);
+            const percent = Math.min(1, value / 255);
+            const barHeight = percent * maxBarHeight;
+            
+            const x = startX + (i * dynamicBarWidth);
+            const y = h - 40;
+            
+            ctx.fillRect(x, y - barHeight, dynamicBarWidth - 1, barHeight);
+        }
+        
+        ctx.restore();
+    }
+
     _getColor(index, total, value) {
         const s = this.saturation;
         const l = this.lightness;
@@ -104,13 +391,11 @@ export class OverlayVisualizer {
                 return this.primaryColor;
 
             case 'gradient': {
-                // Interpolate between primary and secondary
                 const t = index / total;
                 return this._lerpColor(this.primaryColor, this.secondaryColor, t);
             }
 
             case 'beat': {
-                // Brightness scales with amplitude
                 const beatL = Math.min(80, l + value * 30);
                 const hue = 180 + value * 60;
                 return `hsla(${hue},${s}%,${beatL}%,${0.6 + value * 0.4})`;
@@ -124,7 +409,6 @@ export class OverlayVisualizer {
         }
     }
 
-    /** Linear interpolate between two hex colors */
     _lerpColor(a, b, t) {
         const ar = parseInt(a.slice(1, 3), 16), ag = parseInt(a.slice(3, 5), 16), ab = parseInt(a.slice(5, 7), 16);
         const br = parseInt(b.slice(1, 3), 16), bg = parseInt(b.slice(3, 5), 16), bb = parseInt(b.slice(5, 7), 16);
@@ -134,870 +418,20 @@ export class OverlayVisualizer {
         return `rgb(${r},${g},${bl})`;
     }
 
-    applyTransform() {
-        this.canvas.style.opacity = this.opacity;
-        this.canvas.style.mixBlendMode = this.blendMode;
-        this.canvas.style.transform =
-            `translate(${this.offsetX}%, ${this.offsetY}%) scale(${this.scaleX}, ${this.scaleY}) rotate(${this.rotation}deg)`;
-    }
-
-    render(freqData, timeData, beats = [], currentTime = 0) {
-        if (!this.enabled || !freqData) return;
-        const { ctx, width: w, height: h } = this;
-        ctx.clearRect(0, 0, w, h);
-
-        switch (this.mode) {
-            case 'bars':     this._drawBars(ctx, freqData, w, h); break;
-            case 'mirror':   this._drawMirrorBars(ctx, freqData, w, h); break;
-            case 'circular': this._drawCircular(ctx, freqData, w, h); break;
-            case 'radial':   this._drawRadialBurst(ctx, freqData, w, h); break;
-            case 'wave':     this._drawOscilloscope(ctx, timeData, w, h); break;
-            case 'particles':this._drawParticles(ctx, freqData, w, h); break;
-            case 'dotSpectrum':    this._drawDotSpectrum(ctx, freqData, w, h); break;
-            case 'glitchSpectrum': this._drawGlitchSpectrum(ctx, freqData, w, h); break;
-            case 'audioTunnel':    this._drawAudioTunnel(ctx, freqData, w, h); break;
-            case 'neonWave':       this._drawNeonWave(ctx, timeData, w, h); break;
-            case 'constellation':  this._drawConstellation(ctx, freqData, w, h); break;
-            case 'bassPulse':      this._drawBassPulse(ctx, freqData, w, h); break;
-            case 'reactiveGrid':   this._drawReactiveGrid(ctx, freqData, w, h); break;
-            case 'heatmap':        this._drawHeatmap(ctx, freqData, w, h); break;
-            case 'arcWaveform':    this._drawArcWaveform(ctx, timeData || freqData, w, h); break;
-            case 'heartbeat':      this._drawHeartbeatLine(ctx, freqData, w, h); break;
-            case 'grassHeart':     this._drawGrassHeart(ctx, freqData, w, h, beats, currentTime); break;
-        }
-    }
-
-    _drawBars(ctx, data, w, h) {
-        const count = Math.floor(data.length * 0.4);
-        const barW = w / count;
-        for (let i = 0; i < count; i++) {
-            const v = data[i] / 255;
-            const barH = v * h * 0.9;
-            ctx.fillStyle = this._getColor(i, count, v);
-            ctx.fillRect(i * barW, h - barH, barW - 1, barH);
-        }
-    }
-
-    _drawMirrorBars(ctx, data, w, h) {
-        const count = Math.floor(data.length * 0.4);
-        const barW = w / count;
-        const mid = h / 2;
-        for (let i = 0; i < count; i++) {
-            const v = data[i] / 255;
-            const barH = v * mid * 0.9;
-            ctx.fillStyle = this._getColor(i, count, v);
-            ctx.fillRect(i * barW, mid - barH, barW - 1, barH * 2);
-        }
-    }
-
-    _drawCircular(ctx, data, w, h) {
-        const cx = w / 2, cy = h / 2, radius = Math.min(w, h) * 0.2;
-        const bars = 128;
-        for (let i = 0; i < bars; i++) {
-            const v = data[i] / 255;
-            const angle = (i / bars) * Math.PI * 2 - Math.PI / 2;
-            const r2 = radius + v * radius * 1.8;
-            ctx.strokeStyle = this._getColor(i, bars, v);
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius);
-            ctx.lineTo(cx + Math.cos(angle) * r2, cy + Math.sin(angle) * r2);
-            ctx.stroke();
-        }
-        const bass = data.slice(0, 8).reduce((a, b) => a + b, 0) / (8 * 255);
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius * 0.4 + bass * 25, 0, Math.PI * 2);
-        ctx.fillStyle = this._getColor(0, 1, bass);
-        ctx.globalAlpha = 0.3 + bass * 0.4;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-    }
-
-    _drawRadialBurst(ctx, data, w, h) {
-        const cx = w / 2, cy = h / 2;
-        const bars = 180;
-        for (let i = 0; i < bars; i++) {
-            const v = data[Math.floor(i * data.length * 0.3 / bars)] / 255;
-            const angle = (i / bars) * Math.PI * 2;
-            const len = v * Math.min(w, h) * 0.5;
-            ctx.strokeStyle = this._getColor(i, bars, v);
-            ctx.lineWidth = 2 + v * 3;
-            ctx.beginPath();
-            ctx.moveTo(cx, cy);
-            ctx.lineTo(cx + Math.cos(angle) * len, cy + Math.sin(angle) * len);
-            ctx.stroke();
-        }
-    }
-
-    _drawOscilloscope(ctx, data, w, h) {
-        if (!data) return;
-        ctx.strokeStyle = this.primaryColor;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        for (let i = 0; i < data.length; i++) {
-            const y = (data[i] / 128.0) * h / 2;
-            i === 0 ? ctx.moveTo(0, y) : ctx.lineTo((i / data.length) * w, y);
-        }
-        ctx.stroke();
-        // Glow
-        ctx.strokeStyle = this.primaryColor + '4D'; // 30% alpha
-        ctx.lineWidth = 8;
-        ctx.beginPath();
-        for (let i = 0; i < data.length; i++) {
-            const y = (data[i] / 128.0) * h / 2;
-            i === 0 ? ctx.moveTo(0, y) : ctx.lineTo((i / data.length) * w, y);
-        }
-        ctx.stroke();
-    }
-
-    _drawParticles(ctx, data, w, h) {
-        const bass = data.slice(0, 16).reduce((a, b) => a + b, 0) / (16 * 255);
-        if (bass > 0.55) {
-            for (let i = 0; i < 4; i++) {
-                this.particles.push({
-                    x: w / 2 + (Math.random() - 0.5) * 120,
-                    y: h / 2 + (Math.random() - 0.5) * 80,
-                    vx: (Math.random() - 0.5) * bass * 14,
-                    vy: (Math.random() - 0.5) * bass * 14,
-                    life: 1, size: 2 + Math.random() * 5 * bass,
-                    hue: Math.random() * 360,
-                });
-            }
-        }
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            const p = this.particles[i];
-            p.x += p.vx; p.y += p.vy; p.life -= 0.014; p.size *= 0.98;
-            if (p.life <= 0) { this.particles.splice(i, 1); continue; }
-            ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-            if (this.colorMode === 'solid') {
-                ctx.fillStyle = this.primaryColor;
-                ctx.globalAlpha = p.life;
-            } else {
-                ctx.fillStyle = `hsla(${p.hue},${this.saturation}%,${this.lightness}%,${p.life})`;
-            }
-            ctx.fill();
-            ctx.globalAlpha = 1;
-        }
-        if (this.particles.length > 600) this.particles.splice(0, this.particles.length - 600);
-    }
-
-    /* ── Dot Spectrum ──────────────────────────────── */
-_drawDotSpectrum(ctx, data, w, h) {
-        const count = Math.floor(data.length * 0.3);
-        const spacing = w / count;
-    for (let i = 0; i < count; i++) {
-        const v = data[i] / 255;
-        const dotSize = 1 + v * 6;
-        const y = h - v * h * 0.85;
-        ctx.beginPath();
-        ctx.arc(i * spacing + spacing / 2, y, dotSize, 0, Math.PI * 2);
-        ctx.fillStyle = this._getColor(i, count, v);
-        ctx.fill();
-    }
-}
-
-/* ── Glitch Spectrum ───────────────────────────── */
-_drawGlitchSpectrum(ctx, data, w, h) {
-    const count = Math.floor(data.length * 0.4);
-    const barW = w / count;
-    for (let i = 0; i < count; i++) {
-        const v = data[i] / 255;
-        const barH = v * h * 0.9;
-        const glitchOffset = v > 0.7 ? (Math.random() - 0.5) * 20 * v : 0;
-
-        // Red channel offset
-        ctx.fillStyle = `rgba(255,0,0,${0.3 + v * 0.3})`;
-        ctx.fillRect(i * barW + glitchOffset - 2, h - barH, barW - 1, barH);
-
-        // Blue channel offset
-        ctx.fillStyle = `rgba(0,100,255,${0.3 + v * 0.3})`;
-        ctx.fillRect(i * barW + glitchOffset + 2, h - barH, barW - 1, barH);
-
-        // Main bar
-        ctx.fillStyle = this._getColor(i, count, v);
-        ctx.fillRect(i * barW + glitchOffset, h - barH, barW - 1, barH);
-    }
-
-    // Random horizontal tear
-    if (Math.random() < 0.1) {
-        const tearY = Math.random() * h;
-        const tearH = 2 + Math.random() * 6;
-        ctx.fillStyle = `rgba(255,255,255,0.1)`;
-        ctx.fillRect(0, tearY, w, tearH);
-    }
-}
-
-/* ── Audio Tunnel ──────────────────────────────── */
-_drawAudioTunnel(ctx, data, w, h) {
-    const cx = w / 2, cy = h / 2;
-    const maxR = Math.min(w, h) * 0.45;
-    const rings = 12;
-    const bass = data.slice(0, 8).reduce((a, b) => a + b, 0) / (8 * 255);
-
-    for (let r = 0; r < rings; r++) {
-        const baseRadius = (r / rings) * maxR + 20;
-        const freqIdx = Math.floor((r / rings) * data.length * 0.3);
-        const v = data[freqIdx] / 255;
-        const radius = baseRadius + v * 30 + bass * 20;
-
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = this._getColor(r, rings, v);
-        ctx.lineWidth = 1.5 + v * 3;
-        ctx.globalAlpha = 0.3 + v * 0.5;
-        ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-}
-
-/* ── Neon Wave ─────────────────────────────────── */
-_drawNeonWave(ctx, data, w, h) {
-    if (!data) return;
-    const mid = h / 2;
-
-    // Outer glow pass
-    ctx.strokeStyle = this.primaryColor + '33';
-    ctx.lineWidth = 12;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    for (let i = 0; i < data.length; i++) {
-        const y = mid + ((data[i] - 128) / 128) * mid * 0.8;
-        i === 0 ? ctx.moveTo(0, y) : ctx.lineTo((i / data.length) * w, y);
-    }
-    ctx.stroke();
-
-    // Mid glow
-    ctx.strokeStyle = this.primaryColor + '88';
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    for (let i = 0; i < data.length; i++) {
-        const y = mid + ((data[i] - 128) / 128) * mid * 0.8;
-        i === 0 ? ctx.moveTo(0, y) : ctx.lineTo((i / data.length) * w, y);
-    }
-    ctx.stroke();
-
-    // Core bright line
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    for (let i = 0; i < data.length; i++) {
-        const y = mid + ((data[i] - 128) / 128) * mid * 0.8;
-        i === 0 ? ctx.moveTo(0, y) : ctx.lineTo((i / data.length) * w, y);
-    }
-    ctx.stroke();
-}
-
-/* ── Constellation ─────────────────────────────── */
-_drawConstellation(ctx, data, w, h) {
-    const count = 60;
-    const points = [];
-    for (let i = 0; i < count; i++) {
-        const v = data[Math.floor((i / count) * data.length * 0.5)] / 255;
-        const angle = (i / count) * Math.PI * 2 + performance.now() * 0.0003;
-        const radius = 50 + v * Math.min(w, h) * 0.35;
-        points.push({
-            x: w / 2 + Math.cos(angle) * radius,
-            y: h / 2 + Math.sin(angle) * radius,
-            v, size: 1.5 + v * 4,
-        });
-    }
-
-    // Draw connections
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i < points.length; i++) {
-        for (let j = i + 1; j < points.length; j++) {
-            const dx = points[i].x - points[j].x;
-            const dy = points[i].y - points[j].y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 100) {
-                ctx.strokeStyle = this._getColor(i, count, points[i].v);
-                ctx.globalAlpha = (1 - dist / 100) * 0.4;
-                ctx.beginPath();
-                ctx.moveTo(points[i].x, points[i].y);
-                ctx.lineTo(points[j].x, points[j].y);
-                ctx.stroke();
-            }
-        }
-    }
-    ctx.globalAlpha = 1;
-
-    // Draw dots
-    points.forEach((p, i) => {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = this._getColor(i, count, p.v);
-        ctx.fill();
-    });
-}
-
-    /* ── Bass Pulse ────────────────────────────────── */
-    _drawBassPulse(ctx, data, w, h) {
-        const bass = data.slice(0, 10).reduce((a, b) => a + b, 0) / (10 * 255);
-        const cx = w / 2, cy = h / 2;
-        const maxR = Math.min(w, h) * 0.4;
-
-        // Pulsing circle
-        const r = maxR * (0.3 + bass * 0.7);
-        const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-        gradient.addColorStop(0, this._getColor(0, 1, bass));
-        gradient.addColorStop(0.7, this._getColor(0, 1, bass).replace(')', ',0.3)').replace('rgb', 'rgba'));
-        gradient.addColorStop(1, 'transparent');
-
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.fillStyle = gradient;
-        ctx.globalAlpha = 0.3 + bass * 0.5;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-
-        // Ring
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.strokeStyle = this._getColor(0, 1, bass);
-        ctx.lineWidth = 2 + bass * 4;
-        ctx.stroke();
-    }
-
-    /* ── Reactive Grid ─────────────────────────────── */
-    _drawReactiveGrid(ctx, data, w, h) {
-        const bass = data.slice(0, 8).reduce((a, b) => a + b, 0) / (8 * 255);
-        const cols = 16, rows = 10;
-        const cellW = w / cols, cellH = h / rows;
-
-        ctx.lineWidth = 0.8;
-        // Horizontal lines
-        for (let r = 0; r <= rows; r++) {
-            const freqIdx = Math.floor((r / rows) * data.length * 0.3);
-            const v = data[freqIdx] / 255;
-            ctx.strokeStyle = this._getColor(r, rows, v);
-            ctx.globalAlpha = 0.2 + v * 0.5;
-            ctx.beginPath();
-            for (let c = 0; c <= cols; c++) {
-                const x = c * cellW;
-                const warp = Math.sin(c * 0.5 + performance.now() * 0.002) * v * 15 * bass;
-                const y = r * cellH + warp;
-                c === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-            }
-            ctx.stroke();
-        }
-        // Vertical lines
-        for (let c = 0; c <= cols; c++) {
-            const freqIdx = Math.floor((c / cols) * data.length * 0.3);
-            const v = data[freqIdx] / 255;
-            ctx.strokeStyle = this._getColor(c, cols, v);
-            ctx.globalAlpha = 0.2 + v * 0.5;
-            ctx.beginPath();
-            for (let r = 0; r <= rows; r++) {
-                const y = r * cellH;
-                const warp = Math.sin(r * 0.5 + performance.now() * 0.002) * v * 15 * bass;
-                const x = c * cellW + warp;
-                r === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-            }
-            ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-    }
-
-    /* ── Frequency Heatmap ─────────────────────────── */
-    _drawHeatmap(ctx, data, w, h) {
-        const bands = 64;
-        const bandW = w / bands;
-        const scrollSpeed = 2;
-
-        // Shift existing image left
-        if (!this._heatBuffer) {
-            this._heatBuffer = document.createElement('canvas');
-            this._heatBuffer.width = w;
-            this._heatBuffer.height = h;
-        }
-        const hctx = this._heatBuffer.getContext('2d');
-
-        // Scroll left
-        hctx.drawImage(this._heatBuffer, -scrollSpeed, 0);
-
-        // Draw new column on right
-        for (let i = 0; i < bands; i++) {
-            const v = data[Math.floor((i / bands) * data.length * 0.5)] / 255;
-            const barH = v * h;
-            hctx.fillStyle = this._getColor(i, bands, v);
-            hctx.fillRect(w - scrollSpeed, h - barH, scrollSpeed, barH);
-        }
-
-        ctx.drawImage(this._heatBuffer, 0, 0);
-    }
-
-    /* ── Arc Waveform (Minimalist Phonk Style) ─────── */
-  _drawArcWaveform(ctx, data, w, h) {
-    if (!data) return;
-
-    const cx = w / 2;
-    const cy = h * 0.85;
-    const arcRadius = w * 0.45;
-    const spikeHeight = h * 0.35;
-    const points = 180;
-    const startAngle = Math.PI + 0.3;
-    const endAngle = 2 * Math.PI - 0.3;
-
-    if (!this._arcSmooth) this._arcSmooth = new Float32Array(points + 1);
-    const smooth = this._arcSmooth;
-
-    const bassEnd = Math.floor(data.length * 0.15);
-
-    let bassEnergy = 0;
-    for (let i = 0; i < bassEnd; i++) bassEnergy += data[i];
-    bassEnergy /= (bassEnd * 255);
-
-    const beatThreshold = 0.45;
-    const isBeat = bassEnergy > beatThreshold;
-
-    ctx.beginPath();
-    for (let i = 0; i <= points; i++) {
-        const t = i / points;
-        const angle = startAngle + t * (endAngle - startAngle);
-
-        const freqIdx = Math.floor(t * bassEnd);
-        const rawV = data[freqIdx] / 255;
-
-        let targetV = isBeat ? rawV : 0;
-
-        const rate = targetV > smooth[i] ? 0.4 : 0.03;
-        smooth[i] += (targetV - smooth[i]) * rate;
-
-        const v = smooth[i];
-        const r = arcRadius - v * spikeHeight;
-
-        const x = cx + Math.cos(angle) * r;
-        const y = cy + Math.sin(angle) * r;
-
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
-
-    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-    ctx.lineWidth = 6;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
-
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-}
-
-_drawHeartbeatLine(ctx, data, w, h) {
-    if (!data) return;
-
-    const midY = h / 2;
-    const maxSpike = h * 0.4;
-    const points = 400;
-
-    // Focus on bass for beat detection
-    const bassEnergy = (() => {
-        const start = 0;
-        const end = Math.floor(data.length * 0.1);
-        let sum = 0;
-        for (let i = start; i < end; i++) sum += data[i];
-        return sum / ((end - start) * 255);
-    })();
-
-    // Track burst state
-    if (!this._ekgBurst) this._ekgBurst = null;
-    if (!this._ekgLastBeat) this._ekgLastBeat = 0;
-
-    const now = performance.now() / 1000;
-    const beatThreshold = 0.3;
-    const minBeatInterval = 0.2;
-    const ekgDuration = 0.3;
-
-    // Trigger on strong bass hit
-    if (bassEnergy > beatThreshold && (now - this._ekgLastBeat) > minBeatInterval) {
-        this._ekgBurst = {
-            startTime: now,
-            phase: 0,
-            intensity: Math.min(1.0, 0.5 + (bassEnergy - beatThreshold) * 1.5),
-        };
-        this._ekgLastBeat = now;
-    }
-
-    // Update burst animation
-    if (this._ekgBurst) {
-        this._ekgBurst.phase += (1 / 60) / ekgDuration;
-        if (this._ekgBurst.phase >= 1.0) {
-            this._ekgBurst = null;
-        }
-    }
-
-    // Draw the EKG line with sharp QRS complex (spike up, spike down)
-    ctx.beginPath();
-    for (let i = 0; i <= points; i++) {
-        const t = i / points;
-        const x = t * w;
-        let y = midY;
-
-        if (this._ekgBurst) {
-            const burstPos = this._ekgBurst.phase;
-            const burstWidth = 0.12;
-            
-            const distFromBurst = Math.abs(t - burstPos);
-            if (distFromBurst < burstWidth / 2) {
-                const localT = (t - (burstPos - burstWidth / 2)) / burstWidth;
-                
-                // Sharp QRS Complex: Quick dip, SHARP SPIKE UP, SHARP SPIKE DOWN
-                let ekgVal = 0;
-                
-                // Q dip (small down)
-                if (localT >= 0.2 && localT < 0.3) {
-                    ekgVal = -0.15 * ((localT - 0.2) / 0.1);
-                }
-                // R spike (SHARP UP - main peak)
-                else if (localT >= 0.3 && localT < 0.5) {
-                    const spikeT = (localT - 0.3) / 0.2;
-                    // Sharp triangular spike
-                    ekgVal = spikeT < 0.5 
-                        ? spikeT * 2 * 1.0 
-                        : (1 - spikeT) * 2 * 1.0;
-                }
-                // S spike (SHARP DOWN - main trough)
-                else if (localT >= 0.5 && localT < 0.7) {
-                    const spikeT = (localT - 0.5) / 0.2;
-                    // Sharp triangular spike downward
-                    ekgVal = spikeT < 0.5 
-                        ? spikeT * 2 * -0.8 
-                        : (1 - spikeT) * 2 * -0.8;
-                }
-                
-                // Fade at edges
-                let fade = 1;
-                const edgeFade = distFromBurst / (burstWidth / 2);
-                if (edgeFade > 0.7) {
-                    fade = (1 - edgeFade) * 3.33;
-                }
-                
-                y = midY - ekgVal * maxSpike * this._ekgBurst.intensity * fade;
-            }
-        }
-
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
-
-    // Multi-layer stroke for glow effect - RED color
-    ctx.strokeStyle = 'rgba(255,50,50,0.08)';
-    ctx.lineWidth = 10;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-
-    ctx.strokeStyle = 'rgba(255,50,50,0.3)';
-    ctx.lineWidth = 4;
-    ctx.stroke();
-
-    ctx.strokeStyle = 'rgba(255,220,220,0.95)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Subtle grid lines for medical monitor feel
-    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-    ctx.lineWidth = 1;
-    const gridSize = w / 8;
-    for (let gx = 0; gx < w; gx += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(gx, midY - maxSpike * 0.8);
-        ctx.lineTo(gx, midY + maxSpike * 0.6);
-        ctx.stroke();
-    }
-    for (let gy = midY - maxSpike * 0.8; gy <= midY + maxSpike * 0.6; gy += gridSize * 0.6) {
-        ctx.beginPath();
-        ctx.moveTo(0, gy);
-        ctx.lineTo(w, gy);
-        ctx.stroke();
-    }
-}
-
-/**
- * ECG Heart Visualizer - A beating heart with ECG line passing through it
- * The heart pulses with the bass, and an ECG heartbeat line spans left to right
- */
-_drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
-    if (!data) return;
-
-    const cx = w / 2;
-    const cy = h / 2;
-    const baseSize = Math.min(w, h) * 0.18;
-
-    // Calculate bass energy for heart pulse
-    const bassEnd = Math.max(4, Math.floor(data.length * 0.08));
-    let bassEnergy = 0;
-    for (let i = 0; i < bassEnd; i++) bassEnergy += data[i];
-    bassEnergy /= (bassEnd * 255);
-
-    const beatThreshold = 0.35;
-
-    // Heart pulse state
-    if (this._grassHeartScale === undefined) this._grassHeartScale = 1.0;
-    if (this._grassHeartTarget === undefined) this._grassHeartTarget = 1.0;
-    if (this._grassHeartGlow === undefined) this._grassHeartGlow = 0;
-
-    // Handle beat detection
-    if (beats.length > 0 && currentTime > 0) {
-        if (this._grassLastBeatIdx === undefined) this._grassLastBeatIdx = -1;
-        let currentBeatIdx = -1;
-        for (let i = beats.length - 1; i >= 0; i--) {
-            if (currentTime >= beats[i].time - 0.02) { currentBeatIdx = i; break; }
-        }
-        if (currentBeatIdx > this._grassLastBeatIdx && currentBeatIdx >= 0) {
-            const beat = beats[currentBeatIdx];
-            const strength = Math.min(1.0, (beat.strength || 0.5) * 1.5);
-            this._grassHeartTarget = 1.0 + 0.08 + strength * 0.15;
-            this._grassHeartGlow = 0.5 + strength * 0.5;
-            this._grassLastBeatIdx = currentBeatIdx;
-        }
-        if (currentTime < 0.1 && this._grassLastBeatIdx > 0) this._grassLastBeatIdx = -1;
-    } else {
-        // Fallback: raw bass energy
-        if (this._grassHeartLastBeat === undefined) this._grassHeartLastBeat = 0;
-        const now = performance.now() / 1000;
-        if (bassEnergy > beatThreshold && (now - this._grassHeartLastBeat) > 0.15) {
-            const strength = Math.min(1.0, (bassEnergy - beatThreshold) / (0.8 - beatThreshold));
-            this._grassHeartTarget = 1.0 + 0.10 + strength * 0.12;
-            this._grassHeartGlow = 0.4 + strength * 0.4;
-            this._grassHeartLastBeat = now;
-        }
-    }
-
-    // Smooth heart animation
-    this._grassHeartScale += (this._grassHeartTarget - this._grassHeartScale) * 0.2;
-    this._grassHeartTarget += (1.0 - this._grassHeartTarget) * 0.06;
-    this._grassHeartGlow *= 0.90;
-
-    // Draw the heart
-    const drawHeartShape = (scale, alpha, filled = false) => {
-        const s = baseSize * scale;
-        ctx.beginPath();
-        const steps = 200;
-        for (let i = 0; i <= steps; i++) {
-            const t = (i / steps) * Math.PI * 2;
-            const hx = 16 * Math.pow(Math.sin(t), 3);
-            const hy = -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
-            const x = cx + hx * (s / 17);
-            const y = cy + hy * (s / 17) - s * 0.05;
-            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        }
-        ctx.closePath();
-
-        if (filled) {
-            ctx.fillStyle = this._color(alpha, 0);
-            ctx.fill();
-        } else {
-            ctx.strokeStyle = this._color(alpha, 0);
-            ctx.lineWidth = 6;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.stroke();
-
-            ctx.strokeStyle = this._color(alpha * 0.5, 0);
-            ctx.lineWidth = 2;
-            ctx.stroke();
-
-            ctx.strokeStyle = this._color(alpha * 0.9, 0);
-            ctx.lineWidth = 1;
-            ctx.stroke();
-        }
-    };
-
-    // Heart glow
-    if (this._grassHeartGlow > 0.05) {
-        const glowR = baseSize * this._grassHeartScale * 0.9;
-        const gradient = ctx.createRadialGradient(
-            cx, cy - baseSize * 0.05, 0,
-            cx, cy - baseSize * 0.05, glowR
-        );
-        gradient.addColorStop(0, this._color(this._grassHeartGlow * 0.15, 0));
-        gradient.addColorStop(0.4, this._color(this._grassHeartGlow * 0.08, 0.5));
-        gradient.addColorStop(1, 'transparent');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(cx - glowR, cy - glowR - baseSize * 0.5, glowR * 2, glowR * 2);
-    }
-
-    // Draw main heart outline with slight transparency so ECG shows through
-    drawHeartShape(this._grassHeartScale, 0.85, false);
-
-    // Subtle inner fill
-    drawHeartShape(this._grassHeartScale * 0.98, 0.12, true);
-
-    // Beat pulse glow
-    if (this._grassHeartGlow > 0.1) {
-        drawHeartShape(this._grassHeartScale * 1.03, this._grassHeartGlow * 0.4, false);
-    }
-
-    // Draw ECG heartbeat line spanning left to right, passing through the heart
-    this._drawECGLine(ctx, data, w, h, cx, cy, baseSize, currentTime);
-
-    // Add subtle ground shadow under heart
-    const groundY = cy + baseSize * 0.9;
-    const shadowGradient = ctx.createRadialGradient(
-        cx, groundY - 5, 0,
-        cx, groundY - 5, baseSize * 0.6
-    );
-    shadowGradient.addColorStop(0, 'rgba(0, 0, 0, 0.15)');
-    shadowGradient.addColorStop(1, 'transparent');
-    ctx.fillStyle = shadowGradient;
-    ctx.beginPath();
-    ctx.ellipse(cx, groundY - 5, baseSize * 0.6, baseSize * 0.15, 0, 0, Math.PI * 2);
-    ctx.fill();
-}
-
-/**
- * Draw ECG heartbeat line that spans left to right through the heart
- */
-_drawECGLine(ctx, data, w, h, cx, cy, heartSize, currentTime) {
-    const lineY = cy;
-    const lineWidth = w * 0.9;
-    const startX = cx - lineWidth / 2;
-    
-    // Get bass/mid frequencies for ECG amplitude
-    const bassEnd = Math.max(8, Math.floor(data.length * 0.1));
-    let bassEnergy = 0;
-    for (let i = 0; i < bassEnd; i++) bassEnergy += data[i];
-    bassEnergy /= (bassEnd * 255);
-    
-    const midStart = Math.floor(data.length * 0.15);
-    const midEnd = Math.floor(data.length * 0.35);
-    let midEnergy = 0;
-    for (let i = midStart; i < midEnd; i++) midEnergy += data[i];
-    midEnergy /= ((midEnd - midStart) * 255);
-    
-    // ECG waveform parameters
-    const baseAmplitude = h * 0.08;
-    const beatAmp = baseAmplitude * (0.5 + bassEnergy * 0.8);
-    const timeOffset = currentTime * 2; // Speed of animation
-    
-    // Draw ECG line with classic P-QRS-T wave pattern
-    ctx.strokeStyle = this.primaryColor || '#00ff88';
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.shadowColor = this.primaryColor || '#00ff88';
-    ctx.shadowBlur = 10;
-    
-    ctx.beginPath();
-    
-    const numPoints = 200;
-    for (let i = 0; i <= numPoints; i++) {
-        const x = startX + (i / numPoints) * lineWidth;
-        
-        // Create ECG-like waveform using sine waves and sharp peaks
-        const t = (i / numPoints) * Math.PI * 4 + timeOffset;
-        
-        // P wave (small bump before QRS)
-        const pWave = Math.sin(t * 0.5) * 0.15 * baseAmplitude;
-        
-        // QRS complex (sharp spike - the main heartbeat)
-        let qrsComplex = 0;
-        const qrsPhase = (t % (Math.PI * 2));
-        if (qrsPhase > 0 && qrsPhase < Math.PI * 0.3) {
-            // Q dip
-            qrsComplex = -Math.sin(qrsPhase * 3) * 0.2 * beatAmp;
-        } else if (qrsPhase >= Math.PI * 0.3 && qrsPhase < Math.PI * 0.6) {
-            // R spike (main peak)
-            qrsComplex = Math.sin((qrsPhase - Math.PI * 0.3) * 5) * beatAmp;
-        } else if (qrsPhase >= Math.PI * 0.6 && qrsPhase < Math.PI * 0.9) {
-            // S dip
-            qrsComplex = -Math.sin((qrsPhase - Math.PI * 0.6) * 3) * 0.25 * beatAmp;
-        }
-        
-        // T wave (recovery bump after QRS)
-        const tWave = Math.sin(t * 0.3) * 0.2 * baseAmplitude;
-        
-        // Add some noise/jitter for realism
-        const noise = (Math.random() - 0.5) * 0.05 * baseAmplitude;
-        
-        // Combine all components with audio reactivity
-        const y = lineY + pWave + qrsComplex + tWave + noise + midEnergy * baseAmplitude * 0.3;
-        
-        if (i === 0) {
-            ctx.moveTo(x, y);
-        } else {
-            ctx.lineTo(x, y);
-        }
-    }
-    
-    ctx.stroke();
-    
-    // Reset shadow
-    ctx.shadowBlur = 0;
-    
-    // Draw secondary thinner ECG line for glow effect
-    ctx.strokeStyle = (this.primaryColor || '#00ff88') + '40';
-    ctx.lineWidth = 8;
-    ctx.beginPath();
-    for (let i = 0; i <= numPoints; i++) {
-        const x = startX + (i / numPoints) * lineWidth;
-        const t = (i / numPoints) * Math.PI * 4 + timeOffset;
-        const pWave = Math.sin(t * 0.5) * 0.15 * baseAmplitude;
-        let qrsComplex = 0;
-        const qrsPhase = (t % (Math.PI * 2));
-        if (qrsPhase > 0 && qrsPhase < Math.PI * 0.3) {
-            qrsComplex = -Math.sin(qrsPhase * 3) * 0.2 * beatAmp;
-        } else if (qrsPhase >= Math.PI * 0.3 && qrsPhase < Math.PI * 0.6) {
-            qrsComplex = Math.sin((qrsPhase - Math.PI * 0.3) * 5) * beatAmp;
-        } else if (qrsPhase >= Math.PI * 0.6 && qrsPhase < Math.PI * 0.9) {
-            qrsComplex = -Math.sin((qrsPhase - Math.PI * 0.6) * 3) * 0.25 * beatAmp;
-        }
-        const tWave = Math.sin(t * 0.3) * 0.2 * baseAmplitude;
-        const y = lineY + pWave + qrsComplex + tWave;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-}
-
-
-/** Get the primary color as {r, g, b} */
-_getColorRGB(hex) {
-    hex = hex || this.primaryColor || '#ffffff';
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return { r, g, b };
-}
-
-/**
- * Get color string with alpha.
- * @param {number} alpha - Opacity 0-1
- * @param {number} t - Position 0-1 for gradient (0 = primary, 1 = secondary)
- */
-_color(alpha, t = 0) {
-    if (this.colorMode === 'rainbow' || this.colorMode === 'beat') {
-        const hue = ((performance.now() / 20) + t * 120) % 360;
-        return `hsla(${hue}, ${this.saturation}%, ${this.lightness}%, ${alpha})`;
-    }
-
-    if (this.colorMode === 'gradient') {
-        // Interpolate between primary and secondary based on t
-        const c1 = this._getColorRGB(this.primaryColor);
-        const c2 = this._getColorRGB(this.secondaryColor);
-        const r = Math.round(c1.r + (c2.r - c1.r) * t);
-        const g = Math.round(c1.g + (c2.g - c1.g) * t);
-        const b = Math.round(c1.b + (c2.b - c1.b) * t);
-        return `rgba(${r},${g},${b},${alpha})`;
-    }
-
-    // Solid mode
-    const { r, g, b } = this._getColorRGB(this.primaryColor);
-    return `rgba(${r},${g},${b},${alpha})`;
-}
-
     serialize() {
         return {
-            enabled: this.enabled, mode: this.mode, blendMode: this.blendMode,
-            opacity: this.opacity, scaleX: this.scaleX, scaleY: this.scaleY,
-            offsetX: this.offsetX, offsetY: this.offsetY, rotation: this.rotation,
-            colorMode: this.colorMode, primaryColor: this.primaryColor,
-            secondaryColor: this.secondaryColor, saturation: this.saturation,
+            enabled: this.enabled,
+            opacity: this.opacity,
+            blendMode: this.blendMode,
+            scaleX: this.scaleX,
+            scaleY: this.scaleY,
+            offsetX: this.offsetX,
+            offsetY: this.offsetY,
+            rotation: this.rotation,
+            colorMode: this.colorMode,
+            primaryColor: this.primaryColor,
+            secondaryColor: this.secondaryColor,
+            saturation: this.saturation,
             lightness: this.lightness,
             vizSyncBand: this.vizSyncBand,
         };
@@ -1006,11 +440,12 @@ _color(alpha, t = 0) {
     deserialize(o) {
         if (!o) return;
         this.enabled = o.enabled ?? true;
-        this.mode = o.mode || 'bars';
         this.blendMode = o.blendMode || 'screen';
         this.opacity = o.opacity ?? 0.7;
-        this.scaleX = o.scaleX ?? 1; this.scaleY = o.scaleY ?? 1;
-        this.offsetX = o.offsetX ?? 0; this.offsetY = o.offsetY ?? 0;
+        this.scaleX = o.scaleX ?? 1;
+        this.scaleY = o.scaleY ?? 1;
+        this.offsetX = o.offsetX ?? 0;
+        this.offsetY = o.offsetY ?? 0;
         this.rotation = o.rotation ?? 0;
         this.colorMode = o.colorMode || 'rainbow';
         this.primaryColor = o.primaryColor || '#00d4ff';
@@ -1019,5 +454,4 @@ _color(alpha, t = 0) {
         this.lightness = o.lightness ?? 55;
         if (o.vizSyncBand) this.vizSyncBand = o.vizSyncBand;
     }
-
 }
