@@ -718,16 +718,15 @@ _drawHeartbeatLine(ctx, data, w, h) {
 }
 
 /**
- * Grass Heart Visualizer - A beating heart with grass passing through it
- * The heart pulses with the bass, and grass blades react to frequency bands
- * Some grass blades appear behind the heart, others in front for depth
+ * ECG Heart Visualizer - A beating heart with ECG line passing through it
+ * The heart pulses with the bass, and an ECG heartbeat line spans left to right
  */
 _drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
     if (!data) return;
-    
+
     const cx = w / 2;
-    const cy = h / 2 + h * 0.1; // Position heart slightly lower for grass
-    const baseSize = Math.min(w, h) * 0.22;
+    const cy = h / 2;
+    const baseSize = Math.min(w, h) * 0.18;
 
     // Calculate bass energy for heart pulse
     const bassEnd = Math.max(4, Math.floor(data.length * 0.08));
@@ -774,49 +773,7 @@ _drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
     this._grassHeartTarget += (1.0 - this._grassHeartTarget) * 0.06;
     this._grassHeartGlow *= 0.90;
 
-    // Initialize grass if needed - more blades for better coverage with layers
-    const grassBladeCount = 100;
-    if (!this._grassBlades || this._grassBlades.length !== grassBladeCount) {
-        this._grassBlades = [];
-        for (let i = 0; i < grassBladeCount; i++) {
-            const normalizedPos = i / grassBladeCount;
-            const x = (normalizedPos * w);
-            
-            // Assign layers: 40% back, 35% middle, 25% front
-            const layerRand = Math.random();
-            let layer;
-            if (layerRand < 0.4) layer = 'back';
-            else if (layerRand < 0.75) layer = 'middle';
-            else layer = 'front';
-            
-            this._grassBlades.push({
-                x: x,
-                height: 25 + Math.random() * 40,
-                swayOffset: Math.random() * Math.PI * 2,
-                swaySpeed: 0.5 + Math.random() * 1.5,
-                thickness: 1.5 + Math.random() * 2.5,
-                curve: (Math.random() - 0.5) * 0.4,
-                layer: layer,
-                freqBand: Math.floor((i / grassBladeCount) * 24),
-            });
-        }
-    }
-
-    // Get frequency data for grass reaction
-    const freqForGrass = [];
-    const grassBands = 24;
-    for (let i = 0; i < grassBands; i++) {
-        const idx = Math.floor((i / grassBands) * data.length * 0.5);
-        freqForGrass.push(data[idx] / 255);
-    }
-
-    // Draw grass blades - BACK LAYER (behind heart)
-    const groundY = cy + baseSize * 0.9;
-    const time = performance.now() * 0.001;
-
-    this._drawGrassLayer(ctx, 'back', groundY, time, freqForGrass, w, h);
-
-    // Draw heart with glow layers
+    // Draw the heart
     const drawHeartShape = (scale, alpha, filled = false) => {
         const s = baseSize * scale;
         ctx.beginPath();
@@ -851,7 +808,7 @@ _drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
         }
     };
 
-    // Heart glow behind
+    // Heart glow
     if (this._grassHeartGlow > 0.05) {
         const glowR = baseSize * this._grassHeartScale * 0.9;
         const gradient = ctx.createRadialGradient(
@@ -865,69 +822,22 @@ _drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
         ctx.fillRect(cx - glowR, cy - glowR - baseSize * 0.5, glowR * 2, glowR * 2);
     }
 
-    // Draw main heart outline
-    drawHeartShape(this._grassHeartScale, 1.0, false);
+    // Draw main heart outline with slight transparency so ECG shows through
+    drawHeartShape(this._grassHeartScale, 0.85, false);
 
     // Subtle inner fill
-    drawHeartShape(this._grassHeartScale * 0.98, 0.15, true);
+    drawHeartShape(this._grassHeartScale * 0.98, 0.12, true);
 
     // Beat pulse glow
     if (this._grassHeartGlow > 0.1) {
-        drawHeartShape(this._grassHeartScale * 1.03, this._grassHeartGlow * 0.5, false);
+        drawHeartShape(this._grassHeartScale * 1.03, this._grassHeartGlow * 0.4, false);
     }
 
-    // Draw grass blades - MIDDLE LAYER (appears to pass through heart)
-    this._drawGrassLayer(ctx, 'middle', groundY, time, freqForGrass, w, h);
-
-    // Add sparkling particles around heart on strong beats
-    if (this._grassHeartGlow > 0.4) {
-        if (!this._heartParticles) this._heartParticles = [];
-        
-        // Spawn particles on beat
-        if (this._grassHeartGlow > 0.6 && Math.random() < 0.3) {
-            const angle = Math.random() * Math.PI * 2;
-            const dist = baseSize * 0.6 * this._grassHeartScale;
-            this._heartParticles.push({
-                x: cx + Math.cos(angle) * dist,
-                y: cy + Math.sin(angle) * dist - baseSize * 0.3,
-                vx: (Math.random() - 0.5) * 2,
-                vy: -Math.random() * 3 - 1,
-                life: 1,
-                size: 1 + Math.random() * 2,
-                hue: Math.random() * 60 + 340, // Pink to red sparkles
-            });
-        }
-
-        // Update and draw particles
-        for (let i = this._heartParticles.length - 1; i >= 0; i--) {
-            const p = this._heartParticles[i];
-            p.x += p.vx;
-            p.y += p.vy;
-            p.vy += 0.08; // gravity
-            p.life -= 0.02;
-            p.size *= 0.97;
-
-            if (p.life <= 0 || p.size < 0.3) {
-                this._heartParticles.splice(i, 1);
-                continue;
-            }
-
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-            ctx.fillStyle = `hsla(${p.hue}, 80%, 60%, ${p.life})`;
-            ctx.fill();
-        }
-
-        // Limit particles
-        if (this._heartParticles.length > 50) {
-            this._heartParticles.splice(0, this._heartParticles.length - 50);
-        }
-    }
-
-    // Draw grass blades - FRONT LAYER (in front of heart)
-    this._drawGrassLayer(ctx, 'front', groundY, time, freqForGrass, w, h);
+    // Draw ECG heartbeat line spanning left to right, passing through the heart
+    this._drawECGLine(ctx, data, w, h, cx, cy, baseSize, currentTime);
 
     // Add subtle ground shadow under heart
+    const groundY = cy + baseSize * 0.9;
     const shadowGradient = ctx.createRadialGradient(
         cx, groundY - 5, 0,
         cx, groundY - 5, baseSize * 0.6
@@ -941,64 +851,110 @@ _drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
 }
 
 /**
- * Helper method to draw a layer of grass blades
+ * Draw ECG heartbeat line that spans left to right through the heart
  */
-_drawGrassLayer(ctx, layerName, groundY, time, freqForGrass, w, h) {
-    for (let i = 0; i < this._grassBlades.length; i++) {
-        const blade = this._grassBlades[i];
+_drawECGLine(ctx, data, w, h, cx, cy, heartSize, currentTime) {
+    const lineY = cy;
+    const lineWidth = w * 0.9;
+    const startX = cx - lineWidth / 2;
+    
+    // Get bass/mid frequencies for ECG amplitude
+    const bassEnd = Math.max(8, Math.floor(data.length * 0.1));
+    let bassEnergy = 0;
+    for (let i = 0; i < bassEnd; i++) bassEnergy += data[i];
+    bassEnergy /= (bassEnd * 255);
+    
+    const midStart = Math.floor(data.length * 0.15);
+    const midEnd = Math.floor(data.length * 0.35);
+    let midEnergy = 0;
+    for (let i = midStart; i < midEnd; i++) midEnergy += data[i];
+    midEnergy /= ((midEnd - midStart) * 255);
+    
+    // ECG waveform parameters
+    const baseAmplitude = h * 0.08;
+    const beatAmp = baseAmplitude * (0.5 + bassEnergy * 0.8);
+    const timeOffset = currentTime * 2; // Speed of animation
+    
+    // Draw ECG line with classic P-QRS-T wave pattern
+    ctx.strokeStyle = this.primaryColor || '#00ff88';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = this.primaryColor || '#00ff88';
+    ctx.shadowBlur = 10;
+    
+    ctx.beginPath();
+    
+    const numPoints = 200;
+    for (let i = 0; i <= numPoints; i++) {
+        const x = startX + (i / numPoints) * lineWidth;
         
-        // Only draw blades matching this layer
-        if (blade.layer !== layerName) continue;
+        // Create ECG-like waveform using sine waves and sharp peaks
+        const t = (i / numPoints) * Math.PI * 4 + timeOffset;
         
-        const freqValue = freqForGrass[blade.freqBand] || 0;
-
-        // Grass reacts to audio - taller and more swaying with higher frequencies
-        const audioHeightMult = 1 + freqValue * 1.5;
-        const currentHeight = blade.height * audioHeightMult;
-        const swayAmount = 0.15 + freqValue * 0.3;
-        const sway = Math.sin(time * blade.swaySpeed + blade.swayOffset) * swayAmount;
-
-        const x = blade.x;
-        const baseX = x + (x - w/2) * 0.02; // Slight perspective
-
-        ctx.beginPath();
-        ctx.moveTo(baseX, groundY);
-
-        // Quadratic curve for natural grass bend
-        const controlX = baseX + sway * currentHeight + blade.curve * currentHeight;
-        const controlY = groundY - currentHeight * 0.5;
-        const tipX = baseX + sway * currentHeight;
-        const tipY = groundY - currentHeight;
-
-        ctx.quadraticCurveTo(controlX, controlY, tipX, tipY);
-
-        // Color based on position and audio
-        const hue = 100 + freqValue * 40; // Green to yellow-green
-        const sat = 60 + freqValue * 30;
-        const light = 35 + freqValue * 25;
+        // P wave (small bump before QRS)
+        const pWave = Math.sin(t * 0.5) * 0.15 * baseAmplitude;
         
-        // Different opacity for different layers
-        let alpha = 0.7 + freqValue * 0.3;
-        if (layerName === 'back') alpha *= 0.5;
-        else if (layerName === 'middle') alpha *= 0.8;
+        // QRS complex (sharp spike - the main heartbeat)
+        let qrsComplex = 0;
+        const qrsPhase = (t % (Math.PI * 2));
+        if (qrsPhase > 0 && qrsPhase < Math.PI * 0.3) {
+            // Q dip
+            qrsComplex = -Math.sin(qrsPhase * 3) * 0.2 * beatAmp;
+        } else if (qrsPhase >= Math.PI * 0.3 && qrsPhase < Math.PI * 0.6) {
+            // R spike (main peak)
+            qrsComplex = Math.sin((qrsPhase - Math.PI * 0.3) * 5) * beatAmp;
+        } else if (qrsPhase >= Math.PI * 0.6 && qrsPhase < Math.PI * 0.9) {
+            // S dip
+            qrsComplex = -Math.sin((qrsPhase - Math.PI * 0.6) * 3) * 0.25 * beatAmp;
+        }
         
-        ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
-        ctx.lineWidth = blade.thickness * (1 + freqValue * 0.5);
-        ctx.lineCap = 'round';
-        ctx.stroke();
-
-        // Add secondary thinner blade for depth
-        ctx.beginPath();
-        ctx.moveTo(baseX + 2, groundY);
-        ctx.quadraticCurveTo(
-            controlX + 1, controlY,
-            tipX + sway * 5, tipY - 5
-        );
-        ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light - 10}%, ${alpha * 0.6})`;
-        ctx.lineWidth = blade.thickness * 0.5;
-        ctx.stroke();
+        // T wave (recovery bump after QRS)
+        const tWave = Math.sin(t * 0.3) * 0.2 * baseAmplitude;
+        
+        // Add some noise/jitter for realism
+        const noise = (Math.random() - 0.5) * 0.05 * baseAmplitude;
+        
+        // Combine all components with audio reactivity
+        const y = lineY + pWave + qrsComplex + tWave + noise + midEnergy * baseAmplitude * 0.3;
+        
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
     }
+    
+    ctx.stroke();
+    
+    // Reset shadow
+    ctx.shadowBlur = 0;
+    
+    // Draw secondary thinner ECG line for glow effect
+    ctx.strokeStyle = (this.primaryColor || '#00ff88') + '40';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    for (let i = 0; i <= numPoints; i++) {
+        const x = startX + (i / numPoints) * lineWidth;
+        const t = (i / numPoints) * Math.PI * 4 + timeOffset;
+        const pWave = Math.sin(t * 0.5) * 0.15 * baseAmplitude;
+        let qrsComplex = 0;
+        const qrsPhase = (t % (Math.PI * 2));
+        if (qrsPhase > 0 && qrsPhase < Math.PI * 0.3) {
+            qrsComplex = -Math.sin(qrsPhase * 3) * 0.2 * beatAmp;
+        } else if (qrsPhase >= Math.PI * 0.3 && qrsPhase < Math.PI * 0.6) {
+            qrsComplex = Math.sin((qrsPhase - Math.PI * 0.3) * 5) * beatAmp;
+        } else if (qrsPhase >= Math.PI * 0.6 && qrsPhase < Math.PI * 0.9) {
+            qrsComplex = -Math.sin((qrsPhase - Math.PI * 0.6) * 3) * 0.25 * beatAmp;
+        }
+        const tWave = Math.sin(t * 0.3) * 0.2 * baseAmplitude;
+        const y = lineY + pWave + qrsComplex + tWave;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
 }
+
 
 /** Get the primary color as {r, g, b} */
 _getColorRGB(hex) {
