@@ -308,6 +308,10 @@ export class OverlayVisualizer {
         ctx.lineTo(0, baseSize * 0.6);
         ctx.stroke();
 
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1;
+    const gridSize = w / 8;
+    for (let gx = 0; gx < w; gx += gridSize) {
         // Horizontal facet
         ctx.beginPath();
         ctx.moveTo(-baseSize * 0.8, 0);

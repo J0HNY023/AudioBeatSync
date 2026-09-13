@@ -485,6 +485,7 @@
                                             <option value="neonWave">Neon Wave</option>
                                             <option value="arcWaveform">Arc Waveform ✦</option>
                                             <option value="heartbeat">Heartbeat EKG</option>
+                                            <option value="ecgCluster">ECG Cluster (Multi-Peak) 📊</option>
                                         </optgroup>
                                         <optgroup label="Spectrum">
                                             <option value="bars">Spectrum Bars</option>
@@ -550,6 +551,40 @@
                                     <label>Rotation</label>
                                     <input type="range" id="overlayRotation" min="-180" max="180" step="1" value="0">
                                     <div class="range-value" id="overlayRotationVal">0°</div>
+                                </div>
+                                <!-- ECG Cluster Settings -->
+                                <div class="setting-group ecg-settings" id="ecgSettingsGroup" style="display:none; margin-top:12px; border-top:1px solid #252525; padding-top:12px;">
+                                    <label style="color:#ff6b6b; font-weight:600;">📊 ECG Cluster Settings</label>
+                                    <div class="setting-group" style="margin-top:10px;">
+                                        <label>Peak Height</label>
+                                        <input type="range" id="ecgHeight" min="0.1" max="0.5" step="0.05" value="0.35">
+                                        <div class="range-value" id="ecgHeightVal">0.35</div>
+                                    </div>
+                                    <div class="setting-group">
+                                        <label>Spike Spacing</label>
+                                        <input type="range" id="ecgSpacing" min="0.1" max="0.5" step="0.05" value="0.25">
+                                        <div class="range-value" id="ecgSpacingVal">0.25</div>
+                                    </div>
+                                    <div class="setting-group">
+                                        <label>Vertices (Detail)</label>
+                                        <input type="range" id="ecgVertices" min="200" max="1000" step="50" value="500">
+                                        <div class="range-value" id="ecgVerticesVal">500</div>
+                                    </div>
+                                    <div class="setting-group">
+                                        <label>Overlapping Traces</label>
+                                        <input type="range" id="ecgTraces" min="1" max="8" step="1" value="4">
+                                        <div class="range-value" id="ecgTracesVal">4</div>
+                                    </div>
+                                    <div class="setting-group">
+                                        <label>Frequency Separation</label>
+                                        <input type="range" id="ecgFreqSeparation" min="0" max="1" step="0.05" value="0.5">
+                                        <div class="range-value" id="ecgFreqSeparationVal">0.5</div>
+                                    </div>
+                                    <div class="setting-group">
+                                        <label>Spike Shape (Cone/Triangle)</label>
+                                        <input type="range" id="ecgSpikeShape" min="0" max="1" step="0.05" value="0.5">
+                                        <div class="range-value" id="ecgSpikeShapeVal">0.5</div>
+                                    </div>
                                 </div>
                                                                 <!-- COLOR SETTINGS -->
                                 <div class="overlay-grid" style="margin-top:12px;border-top:1px solid #252525;padding-top:12px">
