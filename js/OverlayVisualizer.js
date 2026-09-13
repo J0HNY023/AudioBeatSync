@@ -21,7 +21,7 @@ export class OverlayVisualizer {
         this.rotation = 0;  // degrees
         this.enabled = true;
 
-                // ✅ Color settings
+        // Color settings
         this.colorMode = 'rainbow';    // 'rainbow' | 'solid' | 'gradient' | 'beat'
         this.primaryColor = '#00d4ff'; // Solid/gradient start
         this.secondaryColor = '#ff3366'; // Gradient end
@@ -39,7 +39,8 @@ export class OverlayVisualizer {
         this.width = displayWidth;
         this.height = displayHeight;
     }
-        // Add setter:
+
+    // Add setter:
     setVizSyncBand(band) { this.vizSyncBand = band; }
 
     setMode(mode) { this.mode = mode; this.particles = []; }
@@ -50,7 +51,7 @@ export class OverlayVisualizer {
     setRotation(deg) { this.rotation = deg; }
     setEnabled(v) { this.enabled = v; this.canvas.style.display = v ? 'block' : 'none'; }
 
-        // ✅ Color setters
+    // Color setters
     setColorMode(m) { this.colorMode = m; }
     setPrimaryColor(c) { this.primaryColor = c; }
     setSecondaryColor(c) { this.secondaryColor = c; }
@@ -282,8 +283,8 @@ export class OverlayVisualizer {
 
     /* ── Dot Spectrum ──────────────────────────────── */
 _drawDotSpectrum(ctx, data, w, h) {
-    const count = Math.floor(data.length * 0.3);
-    const spacing = w / count;
+        const count = Math.floor(data.length * 0.3);
+        const spacing = w / count;
     for (let i = 0; i < count; i++) {
         const v = data[i] / 255;
         const dotSize = 1 + v * 6;
@@ -585,7 +586,7 @@ _drawConstellation(ctx, data, w, h) {
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1.2;
     ctx.stroke();
-},
+}
 
 _drawHeartbeatLine(ctx, data, w, h) {
     if (!data) return;
@@ -714,9 +715,255 @@ _drawHeartbeatLine(ctx, data, w, h) {
         ctx.lineTo(w, gy);
         ctx.stroke();
     }
-},
+}
 
-/**\n * Grass Heart Visualizer - A beating heart surrounded by reactive grass\n * The heart pulses with the bass, and grass blades react to frequency bands\n */\n_drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {\n    if (!data) return;\n\n    const cx = w / 2;\n    const cy = h / 2 + h * 0.1; // Position heart slightly lower for grass\n    const baseSize = Math.min(w, h) * 0.22;\n\n    // Calculate bass energy for heart pulse\n    const bassEnd = Math.max(4, Math.floor(data.length * 0.08));\n    let bassEnergy = 0;\n    for (let i = 0; i < bassEnd; i++) bassEnergy += data[i];\n    bassEnergy /= (bassEnd * 255);\n\n    const beatThreshold = 0.35;\n\n    // Heart pulse state\n    if (this._grassHeartScale === undefined) this._grassHeartScale = 1.0;\n    if (this._grassHeartTarget === undefined) this._grassHeartTarget = 1.0;\n    if (this._grassHeartGlow === undefined) this._grassHeartGlow = 0;\n\n    // Handle beat detection\n    if (beats.length > 0 && currentTime > 0) {\n        if (this._grassLastBeatIdx === undefined) this._grassLastBeatIdx = -1;\n        let currentBeatIdx = -1;\n        for (let i = beats.length - 1; i >= 0; i--) {\n            if (currentTime >= beats[i].time - 0.02) { currentBeatIdx = i; break; }\n        }\n        if (currentBeatIdx > this._grassLastBeatIdx && currentBeatIdx >= 0) {\n            const beat = beats[currentBeatIdx];\n            const strength = Math.min(1.0, (beat.strength || 0.5) * 1.5);\n            this._grassHeartTarget = 1.0 + 0.08 + strength * 0.15;\n            this._grassHeartGlow = 0.5 + strength * 0.5;\n            this._grassLastBeatIdx = currentBeatIdx;\n        }\n        if (currentTime < 0.1 && this._grassLastBeatIdx > 0) this._grassLastBeatIdx = -1;\n    } else {\n        // Fallback: raw bass energy\n        if (this._grassHeartLastBeat === undefined) this._grassHeartLastBeat = 0;\n        const now = performance.now() / 1000;\n        if (bassEnergy > beatThreshold && (now - this._grassHeartLastBeat) > 0.15) {\n            const strength = Math.min(1.0, (bassEnergy - beatThreshold) / (0.8 - beatThreshold));\n            this._grassHeartTarget = 1.0 + 0.10 + strength * 0.12;\n            this._grassHeartGlow = 0.4 + strength * 0.4;\n            this._grassHeartLastBeat = now;\n        }\n    }\n\n    // Smooth heart animation\n    this._grassHeartScale += (this._grassHeartTarget - this._grassHeartScale) * 0.2;\n    this._grassHeartTarget += (1.0 - this._grassHeartTarget) * 0.06;\n    this._grassHeartGlow *= 0.90;\n\n    // Initialize grass if needed\n    const grassBladeCount = 80;\n    if (!this._grassBlades || this._grassBlades.length !== grassBladeCount) {\n        this._grassBlades = [];\n        for (let i = 0; i < grassBladeCount; i++) {\n            this._grassBlades.push({\n                x: (i / grassBladeCount) * w,\n                height: 20 + Math.random() * 30,\n                swayOffset: Math.random() * Math.PI * 2,\n                swaySpeed: 0.5 + Math.random() * 1.5,\n                thickness: 1.5 + Math.random() * 2,\n                curve: (Math.random() - 0.5) * 0.3,\n            });\n        }\n    }\n\n    // Get frequency data for grass reaction\n    const freqForGrass = [];\n    const grassBands = 24;\n    for (let i = 0; i < grassBands; i++) {\n        const idx = Math.floor((i / grassBands) * data.length * 0.5);\n        freqForGrass.push(data[idx] / 255);\n    }\n\n    // Draw grass blades\n    const groundY = cy + baseSize * 0.9;\n    const time = performance.now() * 0.001;\n\n    for (let i = 0; i < this._grassBlades.length; i++) {\n        const blade = this._grassBlades[i];\n        const freqIdx = Math.floor((i / this._grassBlades.length) * freqForGrass.length);\n        const freqValue = freqForGrass[freqIdx] || 0;\n\n        // Grass reacts to audio - taller and more swaying with higher frequencies\n        const audioHeightMult = 1 + freqValue * 1.5;\n        const currentHeight = blade.height * audioHeightMult;\n        const swayAmount = 0.15 + freqValue * 0.3;\n        const sway = Math.sin(time * blade.swaySpeed + blade.swayOffset) * swayAmount;\n\n        const x = blade.x;\n        const baseX = x + (x - w/2) * 0.02; // Slight perspective\n\n        ctx.beginPath();\n        ctx.moveTo(baseX, groundY);\n\n        // Quadratic curve for natural grass bend\n        const controlX = baseX + sway * currentHeight + blade.curve * currentHeight;\n        const controlY = groundY - currentHeight * 0.5;\n        const tipX = baseX + sway * currentHeight;\n        const tipY = groundY - currentHeight;\n\n        ctx.quadraticCurveTo(controlX, controlY, tipX, tipY);\n\n        // Color based on position and audio\n        const hue = 100 + freqValue * 40; // Green to yellow-green\n        const sat = 60 + freqValue * 30;\n        const light = 35 + freqValue * 25;\n        ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light}%, ${0.7 + freqValue * 0.3})`;\n        ctx.lineWidth = blade.thickness * (1 + freqValue * 0.5);\n        ctx.lineCap = 'round';\n        ctx.stroke();\n\n        // Add secondary thinner blade for depth\n        ctx.beginPath();\n        ctx.moveTo(baseX + 2, groundY);\n        ctx.quadraticCurveTo(\n            controlX + 1, controlY,\n            tipX + sway * 5, tipY - 5\n        );\n        ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light - 10}%, ${0.4 + freqValue * 0.2})`;\n        ctx.lineWidth = blade.thickness * 0.5;\n        ctx.stroke();\n    }\n\n    // Draw heart with glow layers\n    const drawHeartShape = (scale, alpha, filled = false) => {\n        const s = baseSize * scale;\n        ctx.beginPath();\n        const steps = 200;\n        for (let i = 0; i <= steps; i++) {\n            const t = (i / steps) * Math.PI * 2;\n            const hx = 16 * Math.pow(Math.sin(t), 3);\n            const hy = -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));\n            const x = cx + hx * (s / 17);\n            const y = cy + hy * (s / 17) - s * 0.05;\n            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);\n        }\n        ctx.closePath();\n\n        if (filled) {\n            ctx.fillStyle = this._color(alpha, 0);\n            ctx.fill();\n        } else {\n            ctx.strokeStyle = this._color(alpha, 0);\n            ctx.lineWidth = 6;\n            ctx.lineCap = 'round';\n            ctx.lineJoin = 'round';\n            ctx.stroke();\n\n            ctx.strokeStyle = this._color(alpha * 0.5, 0);\n            ctx.lineWidth = 2;\n            ctx.stroke();\n\n            ctx.strokeStyle = this._color(alpha * 0.9, 0);\n            ctx.lineWidth = 1;\n            ctx.stroke();\n        }\n    };\n\n    // Heart glow behind\n    if (this._grassHeartGlow > 0.05) {\n        const glowR = baseSize * this._grassHeartScale * 0.9;\n        const gradient = ctx.createRadialGradient(\n            cx, cy - baseSize * 0.05, 0,\n            cx, cy - baseSize * 0.05, glowR\n        );\n        gradient.addColorStop(0, this._color(this._grassHeartGlow * 0.15, 0));\n        gradient.addColorStop(0.4, this._color(this._grassHeartGlow * 0.08, 0.5));\n        gradient.addColorStop(1, 'transparent');\n        ctx.fillStyle = gradient;\n        ctx.fillRect(cx - glowR, cy - glowR - baseSize * 0.5, glowR * 2, glowR * 2);\n    }\n\n    // Draw main heart\n    drawHeartShape(this._grassHeartScale, 1.0, false);\n\n    // Subtle inner fill\n    drawHeartShape(this._grassHeartScale * 0.98, 0.15, true);\n\n    // Beat pulse glow\n    if (this._grassHeartGlow > 0.1) {\n        drawHeartShape(this._grassHeartScale * 1.03, this._grassHeartGlow * 0.5, false);\n    }\n\n    // Add sparkling particles around heart on strong beats\n    if (this._grassHeartGlow > 0.4) {\n        if (!this._heartParticles) this._heartParticles = [];\n        \n        // Spawn particles on beat\n        if (this._grassHeartGlow > 0.6 && Math.random() < 0.3) {\n            const angle = Math.random() * Math.PI * 2;\n            const dist = baseSize * 0.6 * this._grassHeartScale;\n            this._heartParticles.push({\n                x: cx + Math.cos(angle) * dist,\n                y: cy + Math.sin(angle) * dist - baseSize * 0.3,\n                vx: (Math.random() - 0.5) * 2,\n                vy: -Math.random() * 3 - 1,\n                life: 1,\n                size: 1 + Math.random() * 2,\n                hue: Math.random() * 60 + 340, // Pink to red sparkles\n            });\n        }\n\n        // Update and draw particles\n        for (let i = this._heartParticles.length - 1; i >= 0; i--) {\n            const p = this._heartParticles[i];\n            p.x += p.vx;\n            p.y += p.vy;\n            p.vy += 0.08; // gravity\n            p.life -= 0.02;\n            p.size *= 0.97;\n\n            if (p.life <= 0 || p.size < 0.3) {\n                this._heartParticles.splice(i, 1);\n                continue;\n            }\n\n            ctx.beginPath();\n            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);\n            ctx.fillStyle = `hsla(${p.hue}, 80%, 60%, ${p.life})`;\n            ctx.fill();\n        }\n\n        // Limit particles\n        if (this._heartParticles.length > 50) {\n            this._heartParticles.splice(0, this._heartParticles.length - 50);\n        }\n    }\n\n    // Add subtle ground shadow under heart\n    const shadowGradient = ctx.createRadialGradient(\n        cx, groundY - 5, 0,\n        cx, groundY - 5, baseSize * 0.6\n    );\n    shadowGradient.addColorStop(0, 'rgba(0, 0, 0, 0.15)');\n    shadowGradient.addColorStop(1, 'transparent');\n    ctx.fillStyle = shadowGradient;\n    ctx.beginPath();\n    ctx.ellipse(cx, groundY - 5, baseSize * 0.6, baseSize * 0.15, 0, 0, Math.PI * 2);\n    ctx.fill();\n},
+/**
+ * Grass Heart Visualizer - A beating heart surrounded by reactive grass
+ * The heart pulses with the bass, and grass blades react to frequency bands
+ */
+_drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
+    if (!data) return;
+
+    const cx = w / 2;
+    const cy = h / 2 + h * 0.1; // Position heart slightly lower for grass
+    const baseSize = Math.min(w, h) * 0.22;
+
+    // Calculate bass energy for heart pulse
+    const bassEnd = Math.max(4, Math.floor(data.length * 0.08));
+    let bassEnergy = 0;
+    for (let i = 0; i < bassEnd; i++) bassEnergy += data[i];
+    bassEnergy /= (bassEnd * 255);
+
+    const beatThreshold = 0.35;
+
+    // Heart pulse state
+    if (this._grassHeartScale === undefined) this._grassHeartScale = 1.0;
+    if (this._grassHeartTarget === undefined) this._grassHeartTarget = 1.0;
+    if (this._grassHeartGlow === undefined) this._grassHeartGlow = 0;
+
+    // Handle beat detection
+    if (beats.length > 0 && currentTime > 0) {
+        if (this._grassLastBeatIdx === undefined) this._grassLastBeatIdx = -1;
+        let currentBeatIdx = -1;
+        for (let i = beats.length - 1; i >= 0; i--) {
+            if (currentTime >= beats[i].time - 0.02) { currentBeatIdx = i; break; }
+        }
+        if (currentBeatIdx > this._grassLastBeatIdx && currentBeatIdx >= 0) {
+            const beat = beats[currentBeatIdx];
+            const strength = Math.min(1.0, (beat.strength || 0.5) * 1.5);
+            this._grassHeartTarget = 1.0 + 0.08 + strength * 0.15;
+            this._grassHeartGlow = 0.5 + strength * 0.5;
+            this._grassLastBeatIdx = currentBeatIdx;
+        }
+        if (currentTime < 0.1 && this._grassLastBeatIdx > 0) this._grassLastBeatIdx = -1;
+    } else {
+        // Fallback: raw bass energy
+        if (this._grassHeartLastBeat === undefined) this._grassHeartLastBeat = 0;
+        const now = performance.now() / 1000;
+        if (bassEnergy > beatThreshold && (now - this._grassHeartLastBeat) > 0.15) {
+            const strength = Math.min(1.0, (bassEnergy - beatThreshold) / (0.8 - beatThreshold));
+            this._grassHeartTarget = 1.0 + 0.10 + strength * 0.12;
+            this._grassHeartGlow = 0.4 + strength * 0.4;
+            this._grassHeartLastBeat = now;
+        }
+    }
+
+    // Smooth heart animation
+    this._grassHeartScale += (this._grassHeartTarget - this._grassHeartScale) * 0.2;
+    this._grassHeartTarget += (1.0 - this._grassHeartTarget) * 0.06;
+    this._grassHeartGlow *= 0.90;
+
+    // Initialize grass if needed
+    const grassBladeCount = 80;
+    if (!this._grassBlades || this._grassBlades.length !== grassBladeCount) {
+        this._grassBlades = [];
+        for (let i = 0; i < grassBladeCount; i++) {
+            this._grassBlades.push({
+                x: (i / grassBladeCount) * w,
+                height: 20 + Math.random() * 30,
+                swayOffset: Math.random() * Math.PI * 2,
+                swaySpeed: 0.5 + Math.random() * 1.5,
+                thickness: 1.5 + Math.random() * 2,
+                curve: (Math.random() - 0.5) * 0.3,
+            });
+        }
+    }
+
+    // Get frequency data for grass reaction
+    const freqForGrass = [];
+    const grassBands = 24;
+    for (let i = 0; i < grassBands; i++) {
+        const idx = Math.floor((i / grassBands) * data.length * 0.5);
+        freqForGrass.push(data[idx] / 255);
+    }
+
+    // Draw grass blades
+    const groundY = cy + baseSize * 0.9;
+    const time = performance.now() * 0.001;
+
+    for (let i = 0; i < this._grassBlades.length; i++) {
+        const blade = this._grassBlades[i];
+        const freqIdx = Math.floor((i / this._grassBlades.length) * freqForGrass.length);
+        const freqValue = freqForGrass[freqIdx] || 0;
+
+        // Grass reacts to audio - taller and more swaying with higher frequencies
+        const audioHeightMult = 1 + freqValue * 1.5;
+        const currentHeight = blade.height * audioHeightMult;
+        const swayAmount = 0.15 + freqValue * 0.3;
+        const sway = Math.sin(time * blade.swaySpeed + blade.swayOffset) * swayAmount;
+
+        const x = blade.x;
+        const baseX = x + (x - w/2) * 0.02; // Slight perspective
+
+        ctx.beginPath();
+        ctx.moveTo(baseX, groundY);
+
+        // Quadratic curve for natural grass bend
+        const controlX = baseX + sway * currentHeight + blade.curve * currentHeight;
+        const controlY = groundY - currentHeight * 0.5;
+        const tipX = baseX + sway * currentHeight;
+        const tipY = groundY - currentHeight;
+
+        ctx.quadraticCurveTo(controlX, controlY, tipX, tipY);
+
+        // Color based on position and audio
+        const hue = 100 + freqValue * 40; // Green to yellow-green
+        const sat = 60 + freqValue * 30;
+        const light = 35 + freqValue * 25;
+        ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light}%, ${0.7 + freqValue * 0.3})`;
+        ctx.lineWidth = blade.thickness * (1 + freqValue * 0.5);
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        // Add secondary thinner blade for depth
+        ctx.beginPath();
+        ctx.moveTo(baseX + 2, groundY);
+        ctx.quadraticCurveTo(
+            controlX + 1, controlY,
+            tipX + sway * 5, tipY - 5
+        );
+        ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light - 10}%, ${0.4 + freqValue * 0.2})`;
+        ctx.lineWidth = blade.thickness * 0.5;
+        ctx.stroke();
+    }
+
+    // Draw heart with glow layers
+    const drawHeartShape = (scale, alpha, filled = false) => {
+        const s = baseSize * scale;
+        ctx.beginPath();
+        const steps = 200;
+        for (let i = 0; i <= steps; i++) {
+            const t = (i / steps) * Math.PI * 2;
+            const hx = 16 * Math.pow(Math.sin(t), 3);
+            const hy = -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
+            const x = cx + hx * (s / 17);
+            const y = cy + hy * (s / 17) - s * 0.05;
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+
+        if (filled) {
+            ctx.fillStyle = this._color(alpha, 0);
+            ctx.fill();
+        } else {
+            ctx.strokeStyle = this._color(alpha, 0);
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+
+            ctx.strokeStyle = this._color(alpha * 0.5, 0);
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.strokeStyle = this._color(alpha * 0.9, 0);
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+    };
+
+    // Heart glow behind
+    if (this._grassHeartGlow > 0.05) {
+        const glowR = baseSize * this._grassHeartScale * 0.9;
+        const gradient = ctx.createRadialGradient(
+            cx, cy - baseSize * 0.05, 0,
+            cx, cy - baseSize * 0.05, glowR
+        );
+        gradient.addColorStop(0, this._color(this._grassHeartGlow * 0.15, 0));
+        gradient.addColorStop(0.4, this._color(this._grassHeartGlow * 0.08, 0.5));
+        gradient.addColorStop(1, 'transparent');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(cx - glowR, cy - glowR - baseSize * 0.5, glowR * 2, glowR * 2);
+    }
+
+    // Draw main heart
+    drawHeartShape(this._grassHeartScale, 1.0, false);
+
+    // Subtle inner fill
+    drawHeartShape(this._grassHeartScale * 0.98, 0.15, true);
+
+    // Beat pulse glow
+    if (this._grassHeartGlow > 0.1) {
+        drawHeartShape(this._grassHeartScale * 1.03, this._grassHeartGlow * 0.5, false);
+    }
+
+    // Add sparkling particles around heart on strong beats
+    if (this._grassHeartGlow > 0.4) {
+        if (!this._heartParticles) this._heartParticles = [];
+        
+        // Spawn particles on beat
+        if (this._grassHeartGlow > 0.6 && Math.random() < 0.3) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = baseSize * 0.6 * this._grassHeartScale;
+            this._heartParticles.push({
+                x: cx + Math.cos(angle) * dist,
+                y: cy + Math.sin(angle) * dist - baseSize * 0.3,
+                vx: (Math.random() - 0.5) * 2,
+                vy: -Math.random() * 3 - 1,
+                life: 1,
+                size: 1 + Math.random() * 2,
+                hue: Math.random() * 60 + 340, // Pink to red sparkles
+            });
+        }
+
+        // Update and draw particles
+        for (let i = this._heartParticles.length - 1; i >= 0; i--) {
+            const p = this._heartParticles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.08; // gravity
+            p.life -= 0.02;
+            p.size *= 0.97;
+
+            if (p.life <= 0 || p.size < 0.3) {
+                this._heartParticles.splice(i, 1);
+                continue;
+            }
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fillStyle = `hsla(${p.hue}, 80%, 60%, ${p.life})`;
+            ctx.fill();
+        }
+
+        // Limit particles
+        if (this._heartParticles.length > 50) {
+            this._heartParticles.splice(0, this._heartParticles.length - 50);
+        }
+    }
+
+    // Add subtle ground shadow under heart
+    const shadowGradient = ctx.createRadialGradient(
+        cx, groundY - 5, 0,
+        cx, groundY - 5, baseSize * 0.6
+    );
+    shadowGradient.addColorStop(0, 'rgba(0, 0, 0, 0.15)');
+    shadowGradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = shadowGradient;
+    ctx.beginPath();
+    ctx.ellipse(cx, groundY - 5, baseSize * 0.6, baseSize * 0.15, 0, 0, Math.PI * 2);
+    ctx.fill();
+}
 
 /** Get the primary color as {r, g, b} */
 _getColorRGB(hex) {
