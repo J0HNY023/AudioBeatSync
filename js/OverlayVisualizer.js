@@ -1,41 +1,40 @@
 /**
- * CONFIG - Easily adjustable parameters for the Synthwave ECG Visualizer
+ * SYNTHWAVE ECG HEART VISUALIZER
+ * 
+ * Visual Architecture:
+ * 1. Background: Pitch-black (#050505) with dark synthwave atmospheric glow.
+ * 2. Centerpiece: Central 3D/crystalline vector heart (glowing pink/magenta #ff0066).
+ * 3. Foreground Wave: Horizontal glowing red/white ECG line with static spike positions but dynamic heights.
+ * 4. Equalizer UI: Modern HUD overlay at bottom with dark vertical bars and track info.
  */
+
+// ==========================================
+// CONFIGURABLE PARAMETERS
+// ==========================================
 const CONFIG = {
-    // Heart Settings
-    heart: {
-        baseSize: 120,          // Base radius of the heart
-        pulseScale: 1.4,        // Max scale factor on beat
-        color: '#ff0066',       // Neon pink/magenta
-        glowBlur: 25,           // Shadow blur intensity
-        glowStrength: 0.8       // Shadow opacity
-    },
+    // --- ECG Line Parameters ---
+    spikeHeight: 120,      // Base height of the ECG peaks (Increase for taller spikes)
+    beatSensitivity: 3.0,  // How violently spikes grow on music beats (0.5 = subtle, 5.0 = dramatic)
+    waveSpeed: 0.05,       // Phase shift speed for subtle pulse animation
+    lineColor: '#ff2a2a',  // Main color of the heartbeat wave
+    lineGlow: '#ff0000',   // Neon glow aura color around the wave
+    lineWidth: 3,          // Thickness of the ECG line
+
+    // --- Heart Parameters ---
+    heartBaseSize: 120,    // Initial pixel size of the center heart
+    heartPulseScale: 40,   // Max extra size added on heavy bass drops
+    heartColor: '#ff0066', // Main color of the neon heart outline
+    heartGlowIntensity: 20,// Blur amount for heart glow
+
+    // --- Audio FFT Parameters ---
+    fftSize: 256,          // Resolution of audio data (64, 128, 256, 512)
+    bassFrequencyCutoff: 20, // Bins to monitor for beat detection (lower = heavy bass focus)
     
-    // ECG Waveform Settings
-    ecg: {
-        speed: 15,              // Pixels per frame movement speed
-        peakHeight: 80,         // Base height of R-spike
-        beatMultiplier: 2.5,    // How much bass boosts the spike
-        lineColor: '#ff3333',   // Reddish core
-        glowColor: '#ffffff',   // White outer glow
-        lineWidth: 3,           // Thickness of the line
-        segments: 100           // Number of points in the wave buffer
-    },
-
-    // Audio Sensitivity
-    audio: {
-        fftSize: 2048,          // Resolution of frequency data
-        bassThreshold: 220,     // Frequency bin index for bass detection
-        sensitivity: 1.5        // Global gain multiplier for visual scaling
-    },
-
-    // UI / HUD
-    ui: {
-        barCount: 64,           // Number of equalizer bars
-        barColor: '#00f0ff',    // Cyan for bars
-        textColor: '#00f0ff',   // Cyan for text
-        trackName: 'AUDIO TRACK: SYNTHETIC PULSE'
-    }
+    // --- UI Parameters ---
+    hudHeight: 100,        // Height of the bottom HUD area
+    barCount: 32,          // Number of frequency bars in HUD
+    barColor: '#00ffff',   // Color of HUD bars
+    textColor: '#ffffff'   // Color of HUD text
 };
 
 export class OverlayVisualizer {
@@ -64,18 +63,10 @@ export class OverlayVisualizer {
 
         this.vizSyncBand = 'bass';
         
-        // ECG Wave State
-        this.wavePoints = [];
-        this.waveOffset = 0;
-        
         // Beat pulse state
         this.beatPulse = 0;
         this.lastBeatTime = 0;
-        
-        // Initialize wave buffer
-        for (let i = 0; i < CONFIG.ecg.segments; i++) {
-            this.wavePoints.push(0);
-        }
+        this.phase = 0; // For ECG wave animation
     }
 
     resize(displayWidth, displayHeight) {
@@ -179,11 +170,11 @@ export class OverlayVisualizer {
         }
         this.beatPulse *= 0.92;
 
-        const currentPulse = 1 + (this.beatPulse * (CONFIG.heart.pulseScale - 1));
-        const ecgIntensity = 1 + (bassEnergy * CONFIG.ecg.beatMultiplier);
+        const currentPulse = 1 + (this.beatPulse * (CONFIG.heartPulseScale / CONFIG.heartBaseSize));
+        const ecgIntensity = 1 + (bassEnergy * CONFIG.beatSensitivity);
 
-        // 2. Draw ECG Waveform (spans left to right, passes through heart)
-        this._drawECGWave(ctx, w, h, ecgIntensity, bassEnergy, currentTime);
+        // 2. Draw ECG Waveform (static positions, dynamic spike heights based on spectrum)
+        this._drawECGWave(ctx, w, h, ecgIntensity, bassEnergy, freqData);
 
         // 3. Draw Central Crystalline Heart (with transparency so ECG shows through)
         this._drawCrystallineHeart(ctx, w, h, currentPulse, bassEnergy);
@@ -193,104 +184,101 @@ export class OverlayVisualizer {
     }
 
     /**
-     * Generates the classic ECG P-QRS-T wave shape mathematically
+     * Draws the ECG line with spikes at fixed positions that react to frequency data
+     * Spikes are positioned like spectrum bars but shaped as ECG QRS complexes
      */
-    _getECGValue(t, intensity) {
-        const cycle = t % 1;
-        let val = 0;
-        
-        // P Wave (small bump) ~0.15
-        if (cycle > 0.1 && cycle < 0.25) {
-            val += Math.sin((cycle - 0.1) * Math.PI * 4) * 0.15;
-        }
-        
-        // Q Dip (small down) ~0.25
-        if (cycle > 0.25 && cycle < 0.3) {
-            val -= Math.sin((cycle - 0.25) * Math.PI * 10) * 0.1;
-        }
-        
-        // R Spike (Huge up) ~0.3 - The main beat
-        if (cycle > 0.3 && cycle < 0.45) {
-            const spikeT = (cycle - 0.3) / 0.15;
-            val += Math.pow(Math.sin(spikeT * Math.PI), 3) * 1.0 * intensity;
-        }
-        
-        // S Dip (down after R) ~0.45
-        if (cycle > 0.45 && cycle < 0.55) {
-            val -= Math.sin((cycle - 0.45) * Math.PI * 5) * 0.15;
-        }
-        
-        // T Wave (medium bump recovery) ~0.6
-        if (cycle > 0.55 && cycle < 0.8) {
-            val += Math.sin((cycle - 0.55) * Math.PI * 2.5) * 0.25;
-        }
-        
-        return val;
-    }
-
-    _drawECGWave(ctx, w, h, intensity, audioLevel, currentTime) {
+    _drawECGWave(ctx, w, h, intensity, audioLevel, freqData) {
         const centerY = h / 2;
-        const segmentWidth = w / CONFIG.ecg.segments;
+        const numSpikes = 7; // Number of QRS complexes across screen
+        const segmentWidth = w / (numSpikes + 1);
         
-        this.waveOffset += CONFIG.ecg.speed;
-        if (this.waveOffset >= segmentWidth) {
-            this.waveOffset = 0;
-            this.wavePoints.shift();
-            const timeFactor = currentTime * 2;
-            const rawVal = this._getECGValue(timeFactor, intensity);
-            this.wavePoints.push(rawVal);
-        }
-
         ctx.save();
-        ctx.beginPath();
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-        ctx.lineWidth = CONFIG.ecg.lineWidth;
-        
-        // Glow effect: White core, red outer
         ctx.shadowBlur = 15;
-        ctx.shadowColor = CONFIG.ecg.glowColor;
-        ctx.strokeStyle = CONFIG.ecg.lineColor;
+        ctx.shadowColor = CONFIG.lineGlow;
+        ctx.strokeStyle = CONFIG.lineColor;
+        ctx.lineWidth = CONFIG.lineWidth;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        ctx.beginPath();
+        ctx.moveTo(0, centerY);
 
-        for (let i = 0; i < this.wavePoints.length; i++) {
-            const x = (i * segmentWidth) - this.waveOffset;
-            const y = centerY - (this.wavePoints[i] * CONFIG.ecg.peakHeight * (1 + audioLevel * 0.2));
+        for (let i = 1; i <= numSpikes; i++) {
+            const x = i * segmentWidth;
             
-            if (i === 0) {
-                ctx.moveTo(x, y);
+            // Map screen position to frequency bin (like spectrum bars)
+            const binIndex = Math.floor((i / numSpikes) * (freqData.length * 0.6));
+            const audioValue = freqData[binIndex] || 0;
+            const normalizedValue = audioValue / 255;
+            
+            // Determine spike height based on position and audio
+            // Center spikes (3, 4) are the "main" beats and react more strongly
+            const isMainBeat = (i === 3 || i === 4);
+            let multiplier;
+            
+            if (isMainBeat) {
+                multiplier = CONFIG.beatSensitivity * normalizedValue * (1 + this.beatPulse);
             } else {
-                ctx.lineTo(x, y);
+                multiplier = 0.4 * normalizedValue;
             }
+
+            // Calculate spike Y position with subtle phase animation
+            const baseSpikeY = centerY - (CONFIG.spikeHeight * multiplier * Math.sin(this.phase * 2 + i));
+            
+            // Draw QRS complex shape
+            const pX = x - (segmentWidth * 0.3);  // P wave position
+            const pY = centerY - (10 * normalizedValue);
+            
+            const qX = x - (segmentWidth * 0.1);  // Q dip
+            const qY = centerY + (15 * multiplier);
+            
+            const rY = baseSpikeY;  // R peak (the main spike)
+            
+            const sX = x + (segmentWidth * 0.1);  // S dip
+            const sY = centerY + (20 * multiplier);
+            
+            const tX = x + (segmentWidth * 0.3);  // T wave
+            const tY = centerY - (15 * normalizedValue);
+
+            if (i === 1) {
+                ctx.lineTo(pX, pY);
+            }
+            
+            ctx.lineTo(qX, qY);
+            ctx.lineTo(x, rY);
+            ctx.lineTo(sX, sY);
+            ctx.lineTo(tX, tY);
         }
         
         ctx.lineTo(w, centerY);
         ctx.stroke();
         
-        // Secondary faint grid line
+        // Add white highlight core for neon tube effect
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = 'rgba(255, 50, 50, 0.1)';
+        ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, centerY);
-        ctx.lineTo(w, centerY);
+        ctx.globalAlpha = 0.8;
         ctx.stroke();
         
         ctx.restore();
+        
+        // Increment phase for subtle movement
+        this.phase += CONFIG.waveSpeed;
     }
 
     _drawCrystallineHeart(ctx, w, h, scale, audioLevel) {
         const cx = w / 2;
         const cy = h / 2;
-        const baseSize = CONFIG.heart.baseSize * scale;
+        const baseSize = CONFIG.heartBaseSize * scale;
 
         ctx.save();
         ctx.translate(cx, cy);
         
         // Glow
-        ctx.shadowBlur = CONFIG.heart.glowBlur * (1 + audioLevel);
-        ctx.shadowColor = CONFIG.heart.color;
+        ctx.shadowBlur = CONFIG.heartGlowIntensity * (1 + audioLevel);
+        ctx.shadowColor = CONFIG.heartColor;
         ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-        ctx.strokeStyle = CONFIG.heart.color;
+        ctx.strokeStyle = CONFIG.heartColor;
         ctx.lineWidth = 3;
 
         // Define Heart Shape Path (parametric equation)
@@ -341,18 +329,18 @@ export class OverlayVisualizer {
     }
 
     _drawHUD(ctx, w, h, bass, mids, currentTime) {
-        const barCount = CONFIG.ui.barCount;
+        const barCount = CONFIG.barCount;
         const maxBarHeight = h * 0.15;
         
         ctx.save();
         ctx.font = '14px "Courier New", monospace';
-        ctx.fillStyle = CONFIG.ui.textColor;
+        ctx.fillStyle = CONFIG.textColor;
         ctx.textBaseline = 'bottom';
         
         // Track Info
         ctx.shadowBlur = 10;
-        ctx.shadowColor = CONFIG.ui.textColor;
-        ctx.fillText(CONFIG.ui.trackName, 20, h - 10);
+        ctx.shadowColor = CONFIG.textColor;
+        ctx.fillText('AUDIO TRACK: SYNTHETIC PULSE', 20, h - 10);
         
         // Timestamp Counter
         const mins = Math.floor(currentTime / 60).toString().padStart(2, '0');
@@ -361,8 +349,8 @@ export class OverlayVisualizer {
 
         // Equalizer Bars
         ctx.shadowBlur = 5;
-        ctx.shadowColor = CONFIG.ui.barColor;
-        ctx.fillStyle = CONFIG.ui.barColor;
+        ctx.shadowColor = CONFIG.barColor;
+        ctx.fillStyle = CONFIG.barColor;
         
         const startX = w * 0.4;
         const availableWidth = w * 0.55;
