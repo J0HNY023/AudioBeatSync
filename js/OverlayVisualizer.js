@@ -162,6 +162,7 @@ export class OverlayVisualizer {
             case 'heatmap':        this._drawHeatmap(ctx, freqData, w, h); break;
             case 'arcWaveform':    this._drawArcWaveform(ctx, timeData || freqData, w, h); break;
             case 'heartbeat':      this._drawHeartbeatLine(ctx, freqData, w, h); break;
+            case 'ecgCluster':     this._drawECGCluster(ctx, freqData, w, h); break;
             case 'beatingHeart':   this._drawBeatingHeart(ctx, freqData, w, h, beats, currentTime); break;
         }
     }
@@ -709,6 +710,176 @@ _drawHeartbeatLine(ctx, data, w, h) {
         ctx.stroke();
     }
     for (let gy = midY - maxSpike * 0.8; gy <= midY + maxSpike * 0.6; gy += gridSize * 0.6) {
+        ctx.beginPath();
+        ctx.moveTo(0, gy);
+        ctx.lineTo(w, gy);
+        ctx.stroke();
+    }
+}
+
+/**
+ * ECG Cluster - Multi-peak waveform cluster with dense multi-vertex pulse.
+ * Shows multiple overlapping EKG traces that react to different frequency bands.
+ */
+_drawECGCluster(ctx, data, w, h) {
+    if (!data) return;
+
+    const midY = h / 2;
+    const maxSpike = h * 0.35;
+    const points = 500;
+    const numTraces = 4; // Number of overlapping ECG traces
+
+    // Calculate energy for different frequency bands
+    const bandEnergy = (startRatio, endRatio) => {
+        const start = Math.floor(data.length * startRatio);
+        const end = Math.floor(data.length * endRatio);
+        let sum = 0;
+        for (let i = start; i < end; i++) sum += data[i];
+        return sum / ((end - start) * 255);
+    };
+
+    const bassEnergy = bandEnergy(0, 0.08);
+    const midEnergy = bandEnergy(0.08, 0.25);
+    const highMidEnergy = bandEnergy(0.25, 0.45);
+    const presenceEnergy = bandEnergy(0.45, 0.65);
+
+    // Track burst states for each trace
+    if (!this._ecgBursts) this._ecgBursts = [];
+    if (!this._ecgLastBeats) this._ecgLastBeats = [0, 0, 0, 0];
+
+    const now = performance.now() / 1000;
+    const beatThreshold = 0.25;
+    const minBeatInterval = 0.15;
+    const ekgDuration = 0.35;
+
+    const energies = [bassEnergy, midEnergy, highMidEnergy, presenceEnergy];
+    const colors = [
+        { outer: 'rgba(255,80,80,0.08)', mid: 'rgba(255,80,80,0.3)', inner: 'rgba(255,200,200,0.95)' },
+        { outer: 'rgba(80,200,255,0.08)', mid: 'rgba(80,200,255,0.3)', inner: 'rgba(200,240,255,0.95)' },
+        { outer: 'rgba(80,255,150,0.08)', mid: 'rgba(80,255,150,0.3)', inner: 'rgba(200,255,220,0.95)' },
+        { outer: 'rgba(255,180,80,0.08)', mid: 'rgba(255,180,80,0.3)', inner: 'rgba(255,240,200,0.95)' },
+    ];
+    const verticalOffsets = [-maxSpike * 0.15, -maxSpike * 0.05, maxSpike * 0.05, maxSpike * 0.15];
+
+    // Trigger bursts for each band
+    for (let t = 0; t < numTraces; t++) {
+        if (energies[t] > beatThreshold && (now - this._ecgLastBeats[t]) > minBeatInterval) {
+            this._ecgBursts[t] = {
+                startTime: now,
+                phase: 0,
+                intensity: Math.min(1.0, 0.4 + (energies[t] - beatThreshold) * 1.2),
+            };
+            this._ecgLastBeats[t] = now;
+        }
+
+        // Update burst animation
+        if (this._ecgBursts[t]) {
+            this._ecgBursts[t].phase += (1 / 60) / ekgDuration;
+            if (this._ecgBursts[t].phase >= 1.0) {
+                this._ecgBursts[t] = null;
+            }
+        }
+    }
+
+    // Draw each ECG trace
+    for (let traceIdx = 0; traceIdx < numTraces; traceIdx++) {
+        const traceY = midY + verticalOffsets[traceIdx];
+        const color = colors[traceIdx];
+
+        ctx.beginPath();
+        for (let i = 0; i <= points; i++) {
+            const t = i / points;
+            const x = t * w;
+            let y = traceY;
+
+            if (this._ecgBursts[traceIdx]) {
+                const burstPos = this._ecgBursts[traceIdx].phase;
+                const burstWidth = 0.15;
+
+                const distFromBurst = Math.abs(t - burstPos);
+                if (distFromBurst < burstWidth / 2) {
+                    const localT = (t - (burstPos - burstWidth / 2)) / burstWidth;
+
+                    // Complex multi-peak ECG waveform (P-Q-R-S-T)
+                    let ekgVal = 0;
+
+                    // P wave (small bump before QRS)
+                    if (localT >= 0.05 && localT < 0.15) {
+                        const pT = (localT - 0.05) / 0.1;
+                        ekgVal = Math.sin(pT * Math.PI) * 0.15;
+                    }
+                    // Q dip (small down)
+                    else if (localT >= 0.15 && localT < 0.22) {
+                        ekgVal = -0.15 * ((localT - 0.15) / 0.07);
+                    }
+                    // R spike (SHARP UP - main peak)
+                    else if (localT >= 0.22 && localT < 0.38) {
+                        const spikeT = (localT - 0.22) / 0.16;
+                        ekgVal = spikeT < 0.5
+                            ? spikeT * 2 * 1.0
+                            : (1 - spikeT) * 2 * 1.0;
+                    }
+                    // S spike (SHARP DOWN - main trough)
+                    else if (localT >= 0.38 && localT < 0.52) {
+                        const spikeT = (localT - 0.38) / 0.14;
+                        ekgVal = spikeT < 0.5
+                            ? spikeT * 2 * -0.7
+                            : (1 - spikeT) * 2 * -0.7;
+                    }
+                    // T wave (rounded bump after QRS)
+                    else if (localT >= 0.52 && localT < 0.72) {
+                        const tT = (localT - 0.52) / 0.2;
+                        ekgVal = Math.sin(tT * Math.PI) * 0.25;
+                    }
+
+                    // Add dense multi-vertex detail (small oscillations)
+                    if (localT >= 0.1 && localT < 0.8) {
+                        const detailFreq = 30;
+                        const detailAmp = 0.08 * (1 - Math.abs(localT - 0.45) * 2);
+                        ekgVal += Math.sin((localT - 0.1) * detailFreq * Math.PI) * detailAmp;
+                    }
+
+                    // Fade at edges
+                    let fade = 1;
+                    const edgeFade = distFromBurst / (burstWidth / 2);
+                    if (edgeFade > 0.7) {
+                        fade = (1 - edgeFade) * 3.33;
+                    }
+
+                    y = traceY - ekgVal * maxSpike * this._ecgBursts[traceIdx].intensity * fade;
+                }
+            }
+
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+
+        // Multi-layer stroke for glow effect
+        ctx.strokeStyle = color.outer;
+        ctx.lineWidth = 8;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+
+        ctx.strokeStyle = color.mid;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.strokeStyle = color.inner;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
+
+    // Subtle grid lines for medical monitor feel
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.lineWidth = 1;
+    const gridSize = w / 10;
+    for (let gx = 0; gx < w; gx += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(gx, midY - maxSpike * 0.6);
+        ctx.lineTo(gx, midY + maxSpike * 0.6);
+        ctx.stroke();
+    }
+    for (let gy = midY - maxSpike * 0.5; gy <= midY + maxSpike * 0.5; gy += gridSize * 0.4) {
         ctx.beginPath();
         ctx.moveTo(0, gy);
         ctx.lineTo(w, gy);
