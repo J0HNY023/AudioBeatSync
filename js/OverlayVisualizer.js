@@ -308,10 +308,6 @@ export class OverlayVisualizer {
         ctx.lineTo(0, baseSize * 0.6);
         ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-    ctx.lineWidth = 1;
-    const gridSize = w / 8;
-    for (let gx = 0; gx < w; gx += gridSize) {
         // Horizontal facet
         ctx.beginPath();
         ctx.moveTo(-baseSize * 0.8, 0);
@@ -933,7 +929,7 @@ _drawHeartbeatLine(ctx, data, w, h) {
             const distFromBurst = Math.abs(t - burstPos);
             if (distFromBurst < burstWidth / 2) {
                 const localT = (t - (burstPos - burstWidth / 2)) / burstWidth;
-                const ekgVal = sampleEKG(localT);
+                const ekgVal = sampleEKGPattern(localT);
                 
                 // Smooth fade in/out at burst edges
                 let fade = 1;
