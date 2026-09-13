@@ -23,7 +23,7 @@ export class AudioEngine {
         this.analyser.fftSize = 2048;
         this.analyser.smoothingTimeConstant = 0.8;
 
-             // ✅ Create gain node for volume control
+        // ✅ Create gain node for volume control
         this.gainNode = this.ctx.createGain();
         this.gainNode.gain.value = this.volume;
 
@@ -36,21 +36,31 @@ export class AudioEngine {
         }
         this.startOffset = 0;
         this.isPlaying = false;
+        
+        // Resume context if suspended (browser autoplay policy)
+        if (this.ctx.state === 'suspended') {
+            await this.ctx.resume();
+        }
     }
 
     play() {
         if (!this.buffer) return;
         if (this.startOffset >= this.duration) this.startOffset = 0;
 
+        // Ensure context is running
+        if (this.ctx.state === 'suspended') {
+            this.ctx.resume();
+        }
+
         this.sourceNode = this.ctx.createBufferSource();
         this.sourceNode.buffer = this.buffer;
 
-
+        // Chain: source → analyser → gain → destination
         this.sourceNode.connect(this.analyser);
+        this.analyser.connect(this.gainNode);
         this.gainNode.connect(this.ctx.destination);
-        this.analyser.connect(this.ctx.destination);
 
-                // If an export destination exists, also route audio there
+        // If an export destination exists, also route audio there
         if (this._exportDest) {
             this.analyser.connect(this._exportDest);
         }
