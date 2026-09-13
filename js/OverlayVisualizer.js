@@ -1050,7 +1050,6 @@ _drawECGCluster(ctx, data, w, h) {
     }
 
     // Subtle grid lines for medical monitor feel
->>>>>>> 17c011b1a0b60d923f0154be202fb988173a6a52
     ctx.strokeStyle = 'rgba(255,255,255,0.03)';
     ctx.lineWidth = 1;
     for (let i = 1; i < 5; i++) {
