@@ -718,12 +718,13 @@ _drawHeartbeatLine(ctx, data, w, h) {
 }
 
 /**
- * Grass Heart Visualizer - A beating heart surrounded by reactive grass
+ * Grass Heart Visualizer - A beating heart with grass passing through it
  * The heart pulses with the bass, and grass blades react to frequency bands
+ * Some grass blades appear behind the heart, others in front for depth
  */
 _drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
     if (!data) return;
-
+    
     const cx = w / 2;
     const cy = h / 2 + h * 0.1; // Position heart slightly lower for grass
     const baseSize = Math.min(w, h) * 0.22;
@@ -773,18 +774,30 @@ _drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
     this._grassHeartTarget += (1.0 - this._grassHeartTarget) * 0.06;
     this._grassHeartGlow *= 0.90;
 
-    // Initialize grass if needed
-    const grassBladeCount = 80;
+    // Initialize grass if needed - more blades for better coverage with layers
+    const grassBladeCount = 100;
     if (!this._grassBlades || this._grassBlades.length !== grassBladeCount) {
         this._grassBlades = [];
         for (let i = 0; i < grassBladeCount; i++) {
+            const normalizedPos = i / grassBladeCount;
+            const x = (normalizedPos * w);
+            
+            // Assign layers: 40% back, 35% middle, 25% front
+            const layerRand = Math.random();
+            let layer;
+            if (layerRand < 0.4) layer = 'back';
+            else if (layerRand < 0.75) layer = 'middle';
+            else layer = 'front';
+            
             this._grassBlades.push({
-                x: (i / grassBladeCount) * w,
-                height: 20 + Math.random() * 30,
+                x: x,
+                height: 25 + Math.random() * 40,
                 swayOffset: Math.random() * Math.PI * 2,
                 swaySpeed: 0.5 + Math.random() * 1.5,
-                thickness: 1.5 + Math.random() * 2,
-                curve: (Math.random() - 0.5) * 0.3,
+                thickness: 1.5 + Math.random() * 2.5,
+                curve: (Math.random() - 0.5) * 0.4,
+                layer: layer,
+                freqBand: Math.floor((i / grassBladeCount) * 24),
             });
         }
     }
@@ -797,55 +810,11 @@ _drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
         freqForGrass.push(data[idx] / 255);
     }
 
-    // Draw grass blades
+    // Draw grass blades - BACK LAYER (behind heart)
     const groundY = cy + baseSize * 0.9;
     const time = performance.now() * 0.001;
 
-    for (let i = 0; i < this._grassBlades.length; i++) {
-        const blade = this._grassBlades[i];
-        const freqIdx = Math.floor((i / this._grassBlades.length) * freqForGrass.length);
-        const freqValue = freqForGrass[freqIdx] || 0;
-
-        // Grass reacts to audio - taller and more swaying with higher frequencies
-        const audioHeightMult = 1 + freqValue * 1.5;
-        const currentHeight = blade.height * audioHeightMult;
-        const swayAmount = 0.15 + freqValue * 0.3;
-        const sway = Math.sin(time * blade.swaySpeed + blade.swayOffset) * swayAmount;
-
-        const x = blade.x;
-        const baseX = x + (x - w/2) * 0.02; // Slight perspective
-
-        ctx.beginPath();
-        ctx.moveTo(baseX, groundY);
-
-        // Quadratic curve for natural grass bend
-        const controlX = baseX + sway * currentHeight + blade.curve * currentHeight;
-        const controlY = groundY - currentHeight * 0.5;
-        const tipX = baseX + sway * currentHeight;
-        const tipY = groundY - currentHeight;
-
-        ctx.quadraticCurveTo(controlX, controlY, tipX, tipY);
-
-        // Color based on position and audio
-        const hue = 100 + freqValue * 40; // Green to yellow-green
-        const sat = 60 + freqValue * 30;
-        const light = 35 + freqValue * 25;
-        ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light}%, ${0.7 + freqValue * 0.3})`;
-        ctx.lineWidth = blade.thickness * (1 + freqValue * 0.5);
-        ctx.lineCap = 'round';
-        ctx.stroke();
-
-        // Add secondary thinner blade for depth
-        ctx.beginPath();
-        ctx.moveTo(baseX + 2, groundY);
-        ctx.quadraticCurveTo(
-            controlX + 1, controlY,
-            tipX + sway * 5, tipY - 5
-        );
-        ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light - 10}%, ${0.4 + freqValue * 0.2})`;
-        ctx.lineWidth = blade.thickness * 0.5;
-        ctx.stroke();
-    }
+    this._drawGrassLayer(ctx, 'back', groundY, time, freqForGrass, w, h);
 
     // Draw heart with glow layers
     const drawHeartShape = (scale, alpha, filled = false) => {
@@ -896,7 +865,7 @@ _drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
         ctx.fillRect(cx - glowR, cy - glowR - baseSize * 0.5, glowR * 2, glowR * 2);
     }
 
-    // Draw main heart
+    // Draw main heart outline
     drawHeartShape(this._grassHeartScale, 1.0, false);
 
     // Subtle inner fill
@@ -906,6 +875,9 @@ _drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
     if (this._grassHeartGlow > 0.1) {
         drawHeartShape(this._grassHeartScale * 1.03, this._grassHeartGlow * 0.5, false);
     }
+
+    // Draw grass blades - MIDDLE LAYER (appears to pass through heart)
+    this._drawGrassLayer(ctx, 'middle', groundY, time, freqForGrass, w, h);
 
     // Add sparkling particles around heart on strong beats
     if (this._grassHeartGlow > 0.4) {
@@ -952,6 +924,9 @@ _drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
         }
     }
 
+    // Draw grass blades - FRONT LAYER (in front of heart)
+    this._drawGrassLayer(ctx, 'front', groundY, time, freqForGrass, w, h);
+
     // Add subtle ground shadow under heart
     const shadowGradient = ctx.createRadialGradient(
         cx, groundY - 5, 0,
@@ -963,6 +938,66 @@ _drawGrassHeart(ctx, data, w, h, beats = [], currentTime = 0) {
     ctx.beginPath();
     ctx.ellipse(cx, groundY - 5, baseSize * 0.6, baseSize * 0.15, 0, 0, Math.PI * 2);
     ctx.fill();
+}
+
+/**
+ * Helper method to draw a layer of grass blades
+ */
+_drawGrassLayer(ctx, layerName, groundY, time, freqForGrass, w, h) {
+    for (let i = 0; i < this._grassBlades.length; i++) {
+        const blade = this._grassBlades[i];
+        
+        // Only draw blades matching this layer
+        if (blade.layer !== layerName) continue;
+        
+        const freqValue = freqForGrass[blade.freqBand] || 0;
+
+        // Grass reacts to audio - taller and more swaying with higher frequencies
+        const audioHeightMult = 1 + freqValue * 1.5;
+        const currentHeight = blade.height * audioHeightMult;
+        const swayAmount = 0.15 + freqValue * 0.3;
+        const sway = Math.sin(time * blade.swaySpeed + blade.swayOffset) * swayAmount;
+
+        const x = blade.x;
+        const baseX = x + (x - w/2) * 0.02; // Slight perspective
+
+        ctx.beginPath();
+        ctx.moveTo(baseX, groundY);
+
+        // Quadratic curve for natural grass bend
+        const controlX = baseX + sway * currentHeight + blade.curve * currentHeight;
+        const controlY = groundY - currentHeight * 0.5;
+        const tipX = baseX + sway * currentHeight;
+        const tipY = groundY - currentHeight;
+
+        ctx.quadraticCurveTo(controlX, controlY, tipX, tipY);
+
+        // Color based on position and audio
+        const hue = 100 + freqValue * 40; // Green to yellow-green
+        const sat = 60 + freqValue * 30;
+        const light = 35 + freqValue * 25;
+        
+        // Different opacity for different layers
+        let alpha = 0.7 + freqValue * 0.3;
+        if (layerName === 'back') alpha *= 0.5;
+        else if (layerName === 'middle') alpha *= 0.8;
+        
+        ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
+        ctx.lineWidth = blade.thickness * (1 + freqValue * 0.5);
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        // Add secondary thinner blade for depth
+        ctx.beginPath();
+        ctx.moveTo(baseX + 2, groundY);
+        ctx.quadraticCurveTo(
+            controlX + 1, controlY,
+            tipX + sway * 5, tipY - 5
+        );
+        ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light - 10}%, ${alpha * 0.6})`;
+        ctx.lineWidth = blade.thickness * 0.5;
+        ctx.stroke();
+    }
 }
 
 /** Get the primary color as {r, g, b} */
