@@ -35,6 +35,8 @@ export class OverlayVisualizer {
         this.ecgSpacing = 0.25;      // 0.1 - 0.5 (spacing between spikes as fraction of width)
         this.ecgVertices = 500;      // 200 - 1000 (detail level)
         this.ecgTraces = 4;          // 1 - 8 (number of overlapping traces)
+        this.ecgFreqSeparation = 0.5; // 0.0 - 1.0 (spacing between frequency bands for cone/triangle shape)
+        this.ecgSpikeShape = 0.5;    // 0.0 - 1.0 (0 = smooth ECG, 1 = sharp cone/triangle)
     }
 
     resize(displayWidth, displayHeight) {
@@ -61,6 +63,8 @@ export class OverlayVisualizer {
     setECGSpacing(v) { this.ecgSpacing = Math.max(0.1, Math.min(0.5, v)); }
     setECGVertices(v) { this.ecgVertices = Math.max(200, Math.min(1000, Math.round(v))); }
     setECGTraces(v) { this.ecgTraces = Math.max(1, Math.min(8, Math.round(v))); }
+    setECGFreqSeparation(v) { this.ecgFreqSeparation = Math.max(0, Math.min(1, v)); }
+    setECGSpikeShape(v) { this.ecgSpikeShape = Math.max(0, Math.min(1, v)); }
 
         // ✅ Color setters
     setColorMode(m) { this.colorMode = m; }
@@ -741,6 +745,8 @@ _drawECGCluster(ctx, data, w, h) {
     const points = this.ecgVertices;
     const numTraces = this.ecgTraces;
     const spacing = this.ecgSpacing;
+    const freqSeparation = this.ecgFreqSeparation; // Controls space between frequency bands
+    const spikeShape = this.ecgSpikeShape; // 0 = smooth ECG, 1 = sharp cone/triangle
 
     // Calculate energy for different frequency bands for isolation
     const bandEnergy = (startRatio, endRatio) => {
@@ -751,13 +757,14 @@ _drawECGCluster(ctx, data, w, h) {
         return sum / ((end - start) * 255);
     };
 
-    // Frequency isolation zones
+    // Frequency isolation zones - adjusted by freqSeparation setting
+    const sepOffset = freqSeparation * 0.15; // Higher separation = more gap between bands
     const bassEnergy = bandEnergy(0, 0.08);      // Q wave depth
-    const lowMidEnergy = bandEnergy(0.08, 0.20); // R wave base
-    const vocalEnergy = bandEnergy(0.20, 0.35);  // R wave height
-    const highMidEnergy = bandEnergy(0.35, 0.50);// R' initiation
-    const presenceEnergy = bandEnergy(0.50, 0.65);// R' sharpness
-    const trebleEnergy = bandEnergy(0.65, 0.85); // R' prime peak complexity
+    const lowMidEnergy = bandEnergy(0.08 + sepOffset, 0.20 - sepOffset); // R wave base
+    const vocalEnergy = bandEnergy(0.20 + sepOffset, 0.35 - sepOffset);  // R wave height
+    const highMidEnergy = bandEnergy(0.35 + sepOffset, 0.50 - sepOffset);// R' initiation
+    const presenceEnergy = bandEnergy(0.50 + sepOffset, 0.65 - sepOffset);// R' sharpness
+    const trebleEnergy = bandEnergy(0.65 + sepOffset, 0.85); // R' prime peak complexity
 
     // Fixed spike positions across the canvas (like spectrum bars)
     const numSpikes = Math.floor(1 / spacing);
@@ -904,6 +911,9 @@ _drawECGCluster(ctx, data, w, h) {
                         // Vertex density increases dramatically with treble content
                         const vertexDensity = 20 + Math.floor(trebleComp * 100);
                         const sharpnessFactor = 0.4 + trebleComp * 2.2;
+                        
+                        // Apply spikeShape: 0 = smooth ECG curves, 1 = sharp cone/triangle
+                        const shapeInterp = spikeShape; // 0 to 1
 
                         let ekgVal = 0;
 
@@ -913,18 +923,32 @@ _drawECGCluster(ctx, data, w, h) {
                             const qT = (localT - 0.08) / 0.1;
                             // Deep negative deflection proportional to bass energy
                             const qDepth = 0.35 + bassComp * 0.6; // Can go very deep
-                            ekgVal = -Math.sin(qT * Math.PI) * qDepth * amplitudeScale;
+                            
+                            // Shape interpolation: sin curve -> triangle/cone
+                            let baseQ = -Math.sin(qT * Math.PI) * qDepth * amplitudeScale;
+                            if (shapeInterp > 0) {
+                                const triangleQ = -(1 - Math.abs(qT - 0.5) * 2) * qDepth * amplitudeScale;
+                                baseQ = baseQ * (1 - shapeInterp) + triangleQ * shapeInterp;
+                            }
+                            ekgVal = baseQ;
                         }
                         
                         // R WAVE - Primary upward spike driven by VOCALS/low-mid
-                        // Massive R wave for vocal presence
+                        // Massive R wave for vocal presence - shaped as cone/triangle when spikeShape is high
                         else if (localT >= 0.18 && localT < 0.32) {
                             const rT = (localT - 0.18) / 0.14;
                             // Asymmetric sharp rise, controlled fall
+                            const rHeight = 0.8 + vocalComp * 1.2; // Scales with vocal energy
+                            
+                            // Base ECG shape (curved)
                             const riseSharp = rT < 0.25 ? Math.pow(rT / 0.25, 0.4) : 1;
                             const fallSharp = rT >= 0.25 ? Math.pow((1 - rT) / 0.75, 0.6) : 0;
-                            const rHeight = 0.8 + vocalComp * 1.2; // Scales with vocal energy
-                            ekgVal = (riseSharp + fallSharp) * rHeight * amplitudeScale * sharpnessFactor;
+                            const baseR = (riseSharp + fallSharp) * rHeight * amplitudeScale * sharpnessFactor;
+                            
+                            // Cone/triangle shape (linear rise and fall)
+                            const coneR = (rT < 0.5 ? rT * 2 : (1 - rT) * 2) * rHeight * amplitudeScale * sharpnessFactor;
+                            
+                            ekgVal = baseR * (1 - shapeInterp) + coneR * shapeInterp;
                         }
                         
                         // NOTCH between R and R' - Small dip
@@ -935,20 +959,34 @@ _drawECGCluster(ctx, data, w, h) {
                         
                         // R' PRIME - Secondary sharp spike driven by TREBLE/HIGHS
                         // This is the pathological feature - prominent only with high-frequency content
+                        // Becomes ultra-sharp cone when spikeShape is high
                         else if (localT >= 0.38 && localT < 0.52) {
                             const rpT = (localT - 0.38) / 0.14;
                             // R' only prominent if treble exists
                             const rPrimePresence = 0.2 + trebleComp * 0.9; // Minimal without treble, massive with it
+                            
+                            // Base ECG shape
                             const riseUltraSharp = rpT < 0.2 ? Math.pow(rpT / 0.2, 0.3) : 1;
                             const fallUltraSharp = rpT >= 0.2 ? Math.pow((1 - rpT) / 0.8, 0.5) : 0;
-                            ekgVal = (riseUltraSharp + fallUltraSharp) * rPrimePresence * amplitudeScale * sharpnessFactor * 1.3;
+                            const baseRPrime = (riseUltraSharp + fallUltraSharp) * rPrimePresence * amplitudeScale * sharpnessFactor * 1.3;
+                            
+                            // Ultra-sharp cone/triangle for extreme treble visualization
+                            const coneRPrime = (rpT < 0.3 ? rpT / 0.3 : (1 - rpT) / 0.7) * rPrimePresence * amplitudeScale * sharpnessFactor * 1.5;
+                            
+                            ekgVal = baseRPrime * (1 - shapeInterp) + coneRPrime * shapeInterp;
                         }
                         
                         // S WAVE - Downward deflection after R' complex
                         else if (localT >= 0.52 && localT < 0.65) {
                             const sT = (localT - 0.52) / 0.13;
                             const sDepth = 0.25 + (rawEnergy * 0.4);
-                            ekgVal = -Math.sin(sT * Math.PI) * sDepth * amplitudeScale * 0.7;
+                            
+                            let baseS = -Math.sin(sT * Math.PI) * sDepth * amplitudeScale * 0.7;
+                            if (shapeInterp > 0) {
+                                const triangleS = -(1 - Math.abs(sT - 0.5) * 2) * sDepth * amplitudeScale * 0.7;
+                                baseS = baseS * (1 - shapeInterp) + triangleS * shapeInterp;
+                            }
+                            ekgVal = baseS;
                         }
                         
                         // T WAVE - Small recovery bump
