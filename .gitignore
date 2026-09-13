@@ -4,9 +4,6 @@
 __pycache__/
 *.o
 *.obj
-dist/
-build/
-*.class
 *.exe
 *.dll
 *.so
@@ -14,28 +11,17 @@ build/
 *.out
 
 # Dependencies
-.venv/
-venv/
 node_modules/
-target/
-.gradle/
-.mypy_cache/
-.pytest_cache/
-julia-*/
-zig*/
+venv/
+.venv/
+.env
+.env.local
+.env.*
 
 # Logs and temp files
 *.log
 *.tmp
 *.swp
-*.swo
-*.bak
-*.~*
-
-# Environment
-.env
-.env.local
-.env.*
 
 # Editors
 .vscode/
@@ -43,14 +29,44 @@ zig*/
 *.swp
 *.swo
 
-# System files
-.DS_Store
-Thumbs.db
+# Build outputs
+dist/
+build/
+target/
+*.class
+*.jar
+*.war
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
 
-# Coverage
+# Coverage reports
 coverage/
 htmlcov/
 .coverage
+
+# Testing
+.mypy_cache/
+.pytest_cache/
+
+# OS generated files
+.DS_Store
+Thumbs.db
 
 # Compressed files
 *.zip

@@ -29,6 +29,12 @@ export class OverlayVisualizer {
         this.lightness = 55;           // 20-80
 
         this.vizSyncBand = 'bass';
+
+        // ECG Cluster settings
+        this.ecgHeight = 0.35;       // 0.1 - 0.5 (percentage of canvas height)
+        this.ecgSpacing = 0.25;      // 0.1 - 0.5 (spacing between spikes as fraction of width)
+        this.ecgVertices = 500;      // 200 - 1000 (detail level)
+        this.ecgTraces = 4;          // 1 - 8 (number of overlapping traces)
     }
 
     resize(displayWidth, displayHeight) {
@@ -49,6 +55,12 @@ export class OverlayVisualizer {
     setOffset(x, y) { this.offsetX = x; this.offsetY = y; }
     setRotation(deg) { this.rotation = deg; }
     setEnabled(v) { this.enabled = v; this.canvas.style.display = v ? 'block' : 'none'; }
+
+    // ECG Cluster setters
+    setECGHeight(v) { this.ecgHeight = Math.max(0.1, Math.min(0.5, v)); }
+    setECGSpacing(v) { this.ecgSpacing = Math.max(0.1, Math.min(0.5, v)); }
+    setECGVertices(v) { this.ecgVertices = Math.max(200, Math.min(1000, Math.round(v))); }
+    setECGTraces(v) { this.ecgTraces = Math.max(1, Math.min(8, Math.round(v))); }
 
         // ✅ Color setters
     setColorMode(m) { this.colorMode = m; }

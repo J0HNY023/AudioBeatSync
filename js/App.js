@@ -424,6 +424,11 @@ class App {
                 offsetX: this.overlayViz.offsetX,
                 offsetY: this.overlayViz.offsetY,
                 rotation: this.overlayViz.rotation,
+                // ECG Cluster settings
+                ecgHeight: this.overlayViz.ecgHeight,
+                ecgSpacing: this.overlayViz.ecgSpacing,
+                ecgVertices: this.overlayViz.ecgVertices,
+                ecgTraces: this.overlayViz.ecgTraces,
             },  // ✅ FIXED: overlay object properly closed here
             beats: this.beats,
             bpm: BeatDetector.estimateBPM(this.beats),
@@ -582,6 +587,16 @@ class App {
             setText('overlayOffsetYVal', (o.offsetY ?? 0) + '%');
             setVal('overlayRotation', o.rotation ?? 0);
             setText('overlayRotationVal', (o.rotation ?? 0) + '°');
+
+            // ECG Cluster settings
+            setVal('ecgHeight', o.ecgHeight ?? 0.35);
+            setText('ecgHeightVal', (o.ecgHeight ?? 0.35).toFixed(2));
+            setVal('ecgSpacing', o.ecgSpacing ?? 0.25);
+            setText('ecgSpacingVal', (o.ecgSpacing ?? 0.25).toFixed(2));
+            setVal('ecgVertices', o.ecgVertices ?? 500);
+            setText('ecgVerticesVal', o.ecgVertices ?? 500);
+            setVal('ecgTraces', o.ecgTraces ?? 4);
+            setText('ecgTracesVal', o.ecgTraces ?? 4);
 
             // ✅ Sync color UI controls
             setSelect('overlayColorMode', o.colorMode || 'rainbow');
@@ -1306,6 +1321,47 @@ class App {
             document.getElementById('overlayRotationVal').textContent = v + '°';
             this.overlayViz.setRotation(v);
             this.overlayViz.applyTransform();
+            this._triggerSave();
+        });
+
+        // ECG Cluster Settings visibility toggle based on mode
+        const overlayModeEl = document.getElementById('overlayMode');
+        const ecgSettingsGroup = document.getElementById('ecgSettingsGroup');
+        if (overlayModeEl && ecgSettingsGroup) {
+            const toggleECGSettings = () => {
+                const isECG = overlayModeEl.value === 'ecgCluster';
+                ecgSettingsGroup.style.display = isECG ? 'block' : 'none';
+            };
+            overlayModeEl.addEventListener('change', toggleECGSettings);
+            toggleECGSettings(); // Initial check
+        }
+
+        // ECG Cluster settings bindings
+        safeBind('ecgHeight', (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('ecgHeightVal').textContent = v.toFixed(2);
+            this.overlayViz.setECGHeight(v);
+            this._triggerSave();
+        });
+
+        safeBind('ecgSpacing', (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('ecgSpacingVal').textContent = v.toFixed(2);
+            this.overlayViz.setECGSpacing(v);
+            this._triggerSave();
+        });
+
+        safeBind('ecgVertices', (e) => {
+            const v = parseInt(e.target.value);
+            document.getElementById('ecgVerticesVal').textContent = v;
+            this.overlayViz.setECGVertices(v);
+            this._triggerSave();
+        });
+
+        safeBind('ecgTraces', (e) => {
+            const v = parseInt(e.target.value);
+            document.getElementById('ecgTracesVal').textContent = v;
+            this.overlayViz.setECGTraces(v);
             this._triggerSave();
         });
 
