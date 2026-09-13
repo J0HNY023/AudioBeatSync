@@ -14,25 +14,25 @@
 const CONFIG = {
     // --- ECG Line Parameters ---
     spikeHeight: 120,      // Base height of the ECG peaks (Increase for taller spikes)
-    beatSensitivity: 3.0,  // How violently spikes grow on music beats (0.5 = subtle, 5.0 = dramatic)
+    beatSensitivity: 1.0,  // How violently spikes grow on music beats (0.5 = subtle, 5.0 = dramatic)
     waveSpeed: 0.05,       // Phase shift speed for subtle pulse animation
     lineColor: '#ff2a2a',  // Main color of the heartbeat wave
     lineGlow: '#ff0000',   // Neon glow aura color around the wave
-    lineWidth: 3,          // Thickness of the ECG line
+    lineWidth: 2,          // Thickness of the ECG line
 
     // --- Heart Parameters ---
-    heartBaseSize: 120,    // Initial pixel size of the center heart
-    heartPulseScale: 40,   // Max extra size added on heavy bass drops
+    heartBaseSize: 30,    // Initial pixel size of the center heart
+    heartPulseScale: 60,   // Max extra size added on heavy bass drops
     heartColor: '#ff0066', // Main color of the neon heart outline
-    heartGlowIntensity: 20,// Blur amount for heart glow
+    heartGlowIntensity: 10,// Blur amount for heart glow
 
     // --- Audio FFT Parameters ---
-    fftSize: 256,          // Resolution of audio data (64, 128, 256, 512)
-    bassFrequencyCutoff: 20, // Bins to monitor for beat detection (lower = heavy bass focus)
+    fftSize: 64,          // Resolution of audio data (64, 128, 256, 512)
+    bassFrequencyCutoff: 5, // Bins to monitor for beat detection (lower = heavy bass focus)
     
     // --- UI Parameters ---
     hudHeight: 100,        // Height of the bottom HUD area
-    barCount: 32,          // Number of frequency bars in HUD
+    barCount: 0,          // Number of frequency bars in HUD
     barColor: '#00ffff',   // Color of HUD bars
     textColor: '#ffffff'   // Color of HUD text
 };
@@ -177,7 +177,7 @@ export class OverlayVisualizer {
         this._drawECGWave(ctx, w, h, ecgIntensity, bassEnergy, freqData);
 
         // 3. Draw Central Crystalline Heart (with transparency so ECG shows through)
-        this._drawCrystallineHeart(ctx, w, h, currentPulse, bassEnergy);
+        //this._drawCrystallineHeart(ctx, w, h, currentPulse, bassEnergy);
 
         // 4. Draw HUD Equalizer & Info
         this._drawHUD(ctx, w, h, bassEnergy, midEnergy, currentTime);
