@@ -625,12 +625,14 @@ _drawHeartbeatLine(ctx, data, w, h) {
     const minBeatInterval = 0.2;
     const ekgDuration = 0.3;
 
-    // Trigger on strong bass hit
+    // Trigger new heartbeat on strong bass hits
     if (bassEnergy > beatThreshold && (now - this._ekgLastBeat) > minBeatInterval) {
+        const intensity = Math.min(1.0, 0.4 + (bassEnergy - beatThreshold) * 1.5);
         this._ekgBurst = {
             startTime: now,
             phase: 0,
-            intensity: Math.min(1.0, 0.5 + (bassEnergy - beatThreshold) * 1.5),
+            intensity: intensity,
+            peakEnergy: bassEnergy,
         };
         this._ekgLastBeat = now;
     }
@@ -638,12 +640,19 @@ _drawHeartbeatLine(ctx, data, w, h) {
     // Update burst animation
     if (this._ekgBurst) {
         this._ekgBurst.phase += (1 / 60) / ekgDuration;
+        
+        // Allow intensity to grow if stronger hit comes during early phase
+        if (this._ekgBurst.phase < 0.3 && bassEnergy > this._ekgBurst.peakEnergy) {
+            this._ekgBurst.peakEnergy = bassEnergy;
+            this._ekgBurst.intensity = Math.min(1.0, 0.4 + (bassEnergy - beatThreshold) * 1.5);
+        }
+        
         if (this._ekgBurst.phase >= 1.0) {
             this._ekgBurst = null;
         }
     }
 
-    // Draw the EKG line with sharp QRS complex (spike up, spike down)
+    // Draw the EKG line with traveling burst
     ctx.beginPath();
     for (let i = 0; i <= points; i++) {
         const t = i / points;
@@ -651,391 +660,52 @@ _drawHeartbeatLine(ctx, data, w, h) {
         let y = midY;
 
         if (this._ekgBurst) {
-            const burstPos = this._ekgBurst.phase;
-            const burstWidth = 0.12;
+            const burst = this._ekgBurst;
+            const burstPos = burst.phase; // Position travels from 0 to 1
+            const burstWidth = 0.15;
             
             const distFromBurst = Math.abs(t - burstPos);
             if (distFromBurst < burstWidth / 2) {
                 const localT = (t - (burstPos - burstWidth / 2)) / burstWidth;
+                const ekgVal = sampleEKG(localT);
                 
-                // Sharp QRS Complex: Quick dip, SHARP SPIKE UP, SHARP SPIKE DOWN
-                let ekgVal = 0;
-                
-                // Q dip (small down)
-                if (localT >= 0.2 && localT < 0.3) {
-                    ekgVal = -0.15 * ((localT - 0.2) / 0.1);
-                }
-                // R spike (SHARP UP - main peak)
-                else if (localT >= 0.3 && localT < 0.5) {
-                    const spikeT = (localT - 0.3) / 0.2;
-                    // Sharp triangular spike
-                    ekgVal = spikeT < 0.5 
-                        ? spikeT * 2 * 1.0 
-                        : (1 - spikeT) * 2 * 1.0;
-                }
-                // S spike (SHARP DOWN - main trough)
-                else if (localT >= 0.5 && localT < 0.7) {
-                    const spikeT = (localT - 0.5) / 0.2;
-                    // Sharp triangular spike downward
-                    ekgVal = spikeT < 0.5 
-                        ? spikeT * 2 * -0.8 
-                        : (1 - spikeT) * 2 * -0.8;
-                }
-                
-                // Fade at edges
+                // Smooth fade in/out at burst edges
                 let fade = 1;
                 const edgeFade = distFromBurst / (burstWidth / 2);
                 if (edgeFade > 0.7) {
                     fade = (1 - edgeFade) * 3.33;
                 }
                 
-                y = midY - ekgVal * maxSpike * this._ekgBurst.intensity * fade;
+                y = midY - ekgVal * maxSpike * burst.intensity * fade;
             }
         }
 
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
 
-    // Multi-layer stroke for glow effect - RED color
-    ctx.strokeStyle = 'rgba(255,50,50,0.08)';
-    ctx.lineWidth = 10;
+    // Multi-layer stroke for glow effect
+    ctx.strokeStyle = 'rgba(255,80,80,0.08)';
+    ctx.lineWidth = 8;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(255,50,50,0.3)';
-    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(255,80,80,0.3)';
+    ctx.lineWidth = 3;
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(255,220,220,0.95)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255,200,200,0.95)';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
-
-    // Subtle grid lines for medical monitor feel
-    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-    ctx.lineWidth = 1;
-    const gridSize = w / 8;
-    for (let gx = 0; gx < w; gx += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(gx, midY - maxSpike * 0.8);
-        ctx.lineTo(gx, midY + maxSpike * 0.6);
-        ctx.stroke();
-    }
-    for (let gy = midY - maxSpike * 0.8; gy <= midY + maxSpike * 0.6; gy += gridSize * 0.6) {
-        ctx.beginPath();
-        ctx.moveTo(0, gy);
-        ctx.lineTo(w, gy);
-        ctx.stroke();
-    }
-}
-
-/**
- * ECG Cluster - Multi-peak waveform cluster with dense multi-vertex pulse.
- * Shows multiple overlapping EKG traces that react to different frequency bands.
- */
-_drawECGCluster(ctx, data, w, h) {
-    if (!data) return;
-
-    const midY = h / 2;
-    const maxSpike = h * this.ecgHeight;
-    const points = this.ecgVertices;
-    const numTraces = this.ecgTraces;
-    const spacing = this.ecgSpacing;
-
-    // Calculate energy for different frequency bands for isolation
-    const bandEnergy = (startRatio, endRatio) => {
-        const start = Math.floor(data.length * startRatio);
-        const end = Math.floor(data.length * endRatio);
-        let sum = 0;
-        for (let i = start; i < end; i++) sum += data[i];
-        return sum / ((end - start) * 255);
-    };
-
-    // Frequency isolation zones
-    const bassEnergy = bandEnergy(0, 0.08);      // Q wave depth
-    const lowMidEnergy = bandEnergy(0.08, 0.20); // R wave base
-    const vocalEnergy = bandEnergy(0.20, 0.35);  // R wave height
-    const highMidEnergy = bandEnergy(0.35, 0.50);// R' initiation
-    const presenceEnergy = bandEnergy(0.50, 0.65);// R' sharpness
-    const trebleEnergy = bandEnergy(0.65, 0.85); // R' prime peak complexity
-
-    // Fixed spike positions across the canvas (like spectrum bars)
-    const numSpikes = Math.floor(1 / spacing);
-    const spikePositions = [];
-    for (let s = 0; s < numSpikes; s++) {
-        spikePositions.push((s + 0.5) / numSpikes);
-    }
-
-    // Track activation state for each spike position per trace
-    if (!this._ecgSpikes) this._ecgSpikes = [];
-    if (this._ecgSpikes.length !== numTraces) {
-        this._ecgSpikes = Array(numTraces).fill(null).map(() => []);
-    }
-    for (let t = 0; t < numTraces; t++) {
-        if (this._ecgSpikes[t].length !== numSpikes) {
-            this._ecgSpikes[t] = Array(numSpikes).fill(null);
-        }
-    }
-
-    const now = performance.now() / 1000;
-    const beatThreshold = 0.12;
-    const minBeatInterval = 0.06;
-    const ekgDuration = 0.2;
-
-    // Each spike corresponds to a specific narrow frequency bin
-    const freqBinsPerSpike = Math.floor(data.length * 0.7 / numSpikes);
-    
-    const baseColors = [
-        { outer: 'rgba(255,80,80,0.08)', mid: 'rgba(255,80,80,0.3)', inner: 'rgba(255,200,200,0.95)' },
-        { outer: 'rgba(80,200,255,0.08)', mid: 'rgba(80,200,255,0.3)', inner: 'rgba(200,240,255,0.95)' },
-        { outer: 'rgba(80,255,150,0.08)', mid: 'rgba(80,255,150,0.3)', inner: 'rgba(200,255,220,0.95)' },
-        { outer: 'rgba(255,180,80,0.08)', mid: 'rgba(255,180,80,0.3)', inner: 'rgba(255,240,200,0.95)' },
-        { outer: 'rgba(200,80,255,0.08)', mid: 'rgba(200,80,255,0.3)', inner: 'rgba(240,200,255,0.95)' },
-        { outer: 'rgba(255,80,180,0.08)', mid: 'rgba(255,80,180,0.3)', inner: 'rgba(255,200,230,0.95)' },
-        { outer: 'rgba(80,255,200,0.08)', mid: 'rgba(80,255,200,0.3)', inner: 'rgba(200,255,240,0.95)' },
-        { outer: 'rgba(255,200,80,0.08)', mid: 'rgba(255,200,80,0.3)', inner: 'rgba(255,240,180,0.95)' },
-    ];
-    const verticalOffsets = [];
-    const traceSpacing = maxSpike * 0.25;
-    const startY = midY - ((numTraces - 1) * traceSpacing) / 2;
-    for (let t = 0; t < numTraces; t++) {
-        verticalOffsets.push(startY + t * traceSpacing);
-    }
-
-    // Check each spike position for activation based on ISOLATED frequency energy
-    for (let t = 0; t < numTraces; t++) {
-        for (let s = 0; s < numSpikes; s++) {
-            // Map each spike to a SPECIFIC frequency bin range
-            const freqStart = Math.floor(data.length * (0.1 + (s / numSpikes) * 0.7));
-            const freqEnd = Math.min(data.length, freqStart + freqBinsPerSpike);
-            
-            // Isolate energy in this specific frequency range
-            let localEnergy = 0;
-            let localBass = 0, localVocal = 0, localTreble = 0;
-            let binCount = 0;
-            
-            for (let fi = freqStart; fi < freqEnd && fi < data.length; fi++) {
-                const normVal = data[fi] / 255;
-                localEnergy += normVal;
-                
-                // Categorize bins within this spike's range
-                const binRatio = (fi - freqStart) / (freqEnd - freqStart);
-                if (binRatio < 0.33) localBass += normVal;
-                else if (binRatio < 0.66) localVocal += normVal;
-                else localTreble += normVal;
-                
-                binCount++;
-            }
-            
-            if (binCount > 0) {
-                localEnergy /= binCount;
-                localBass /= Math.ceil(binCount * 0.33);
-                localVocal /= Math.ceil(binCount * 0.33);
-                localTreble /= Math.floor(binCount * 0.34);
-            }
-            
-            // Add trace variation
-            const traceOffset = (t * 0.08) % 0.2;
-            const energyVaried = localEnergy * (1.0 + traceOffset + Math.random() * 0.2);
-            
-            // Store isolated frequency components for waveform shaping
-            if (energyVaried > beatThreshold && (!this._ecgSpikes[t][s] || (now - this._ecgSpikes[t][s].startTime) > minBeatInterval)) {
-                const delayOffset = s * 0.005 * (1 - energyVaried);
-                const activationTime = now - delayOffset;
-                
-                if (!this._ecgSpikes[t][s] || (activationTime - this._ecgSpikes[t][s].startTime) > minBeatInterval) {
-                    this._ecgSpikes[t][s] = {
-                        startTime: activationTime,
-                        phase: 0,
-                        intensity: Math.min(1.5, 0.4 + (energyVaried - beatThreshold) * 2.0),
-                        rawEnergy: energyVaried,
-                        // Store isolated frequency energies for pathological shape
-                        bassComponent: Math.min(1.0, localBass),      // Controls Q depth
-                        vocalComponent: Math.min(1.0, localVocal),   // Controls R height
-                        trebleComponent: Math.min(1.0, localTreble), // Controls R' sharpness
-                    };
-                }
-            }
-
-            // Update burst animation
-            if (this._ecgSpikes[t][s]) {
-                this._ecgSpikes[t][s].phase += (1 / 60) / ekgDuration;
-                if (this._ecgSpikes[t][s].phase >= 1.0) {
-                    this._ecgSpikes[t][s] = null;
-                }
-            }
-        }
-    }
-
-    // Draw each ECG trace at its fixed vertical position
-    for (let traceIdx = 0; traceIdx < numTraces; traceIdx++) {
-        const traceY = verticalOffsets[traceIdx];
-        const color = baseColors[traceIdx % baseColors.length];
-
-        ctx.beginPath();
-        for (let i = 0; i <= points; i++) {
-            const t = i / points;
-            const x = t * w;
-            let y = traceY;
-
-            // Check contribution from each spike at this x position
-            for (let s = 0; s < numSpikes; s++) {
-                const spikeX = spikePositions[s];
-                const spikeWidth = spacing * 0.85;
-
-                if (this._ecgSpikes[traceIdx][s]) {
-                    const distFromSpike = Math.abs(t - spikeX);
-                    
-                    if (distFromSpike < spikeWidth / 2) {
-                        const localT = (t - (spikeX - spikeWidth / 2)) / spikeWidth;
-                        const burstPhase = this._ecgSpikes[traceIdx][s].phase;
-                        const spikeIntensity = this._ecgSpikes[traceIdx][s].intensity;
-                        const rawEnergy = this._ecgSpikes[traceIdx][s].rawEnergy || 0;
-                        const bassComp = this._ecgSpikes[traceIdx][s].bassComponent || 0;
-                        const vocalComp = this._ecgSpikes[traceIdx][s].vocalComponent || 0;
-                        const trebleComp = this._ecgSpikes[traceIdx][s].trebleComponent || 0;
-
-                        // PATHOLOGICAL RSr' WAVEFORM with DEEP Q
-                        // Each component driven by isolated frequency band
-                        
-                        // Amplitude scales with overall energy but modulated by frequency isolation
-                        const amplitudeScale = 0.4 + rawEnergy * 2.0;
-                        
-                        // Vertex density increases dramatically with treble content
-                        const vertexDensity = 20 + Math.floor(trebleComp * 100);
-                        const sharpnessFactor = 0.4 + trebleComp * 2.2;
-
-                        let ekgVal = 0;
-
-                        // DEEP Q WAVE - Driven by BASS/low frequencies
-                        // Pathological deep Q indicates bass-heavy content
-                        if (localT >= 0.08 && localT < 0.18) {
-                            const qT = (localT - 0.08) / 0.1;
-                            // Deep negative deflection proportional to bass energy
-                            const qDepth = 0.35 + bassComp * 0.6; // Can go very deep
-                            ekgVal = -Math.sin(qT * Math.PI) * qDepth * amplitudeScale;
-                        }
-                        
-                        // R WAVE - Primary upward spike driven by VOCALS/low-mid
-                        // Massive R wave for vocal presence
-                        else if (localT >= 0.18 && localT < 0.32) {
-                            const rT = (localT - 0.18) / 0.14;
-                            // Asymmetric sharp rise, controlled fall
-                            const riseSharp = rT < 0.25 ? Math.pow(rT / 0.25, 0.4) : 1;
-                            const fallSharp = rT >= 0.25 ? Math.pow((1 - rT) / 0.75, 0.6) : 0;
-                            const rHeight = 0.8 + vocalComp * 1.2; // Scales with vocal energy
-                            ekgVal = (riseSharp + fallSharp) * rHeight * amplitudeScale * sharpnessFactor;
-                        }
-                        
-                        // NOTCH between R and R' - Small dip
-                        else if (localT >= 0.32 && localT < 0.38) {
-                            const notchT = (localT - 0.32) / 0.06;
-                            ekgVal = (0.3 - notchT * 0.3) * amplitudeScale;
-                        }
-                        
-                        // R' PRIME - Secondary sharp spike driven by TREBLE/HIGHS
-                        // This is the pathological feature - prominent only with high-frequency content
-                        else if (localT >= 0.38 && localT < 0.52) {
-                            const rpT = (localT - 0.38) / 0.14;
-                            // R' only prominent if treble exists
-                            const rPrimePresence = 0.2 + trebleComp * 0.9; // Minimal without treble, massive with it
-                            const riseUltraSharp = rpT < 0.2 ? Math.pow(rpT / 0.2, 0.3) : 1;
-                            const fallUltraSharp = rpT >= 0.2 ? Math.pow((1 - rpT) / 0.8, 0.5) : 0;
-                            ekgVal = (riseUltraSharp + fallUltraSharp) * rPrimePresence * amplitudeScale * sharpnessFactor * 1.3;
-                        }
-                        
-                        // S WAVE - Downward deflection after R' complex
-                        else if (localT >= 0.52 && localT < 0.65) {
-                            const sT = (localT - 0.52) / 0.13;
-                            const sDepth = 0.25 + (rawEnergy * 0.4);
-                            ekgVal = -Math.sin(sT * Math.PI) * sDepth * amplitudeScale * 0.7;
-                        }
-                        
-                        // T WAVE - Small recovery bump
-                        else if (localT >= 0.65 && localT < 0.82) {
-                            const tT = (localT - 0.65) / 0.17;
-                            ekgVal = Math.sin(tT * Math.PI) * 0.15 * amplitudeScale * 0.5;
-                        }
-
-                        // HYPER-REACTIVE RAZOR-SHARP ZIG-ZAG CLUSTER for high-frequencies
-                        // Creates dense multi-peak patterns on cymbals, hi-hats, percussion
-                        if (localT >= 0.15 && localT < 0.75 && trebleComp > 0.15) {
-                            let clusterVal = 0;
-                            
-                            // Multiple overlapping high-frequency harmonics
-                            for (let v = 0; v < 4; v++) {
-                                const harmonicFreq = vertexDensity * (1 + v * 0.43);
-                                const harmonicAmp = (1 / (v + 1)) * (0.08 * trebleComp * sharpnessFactor);
-                                const phaseShift = v * 0.9 + rawEnergy;
-                                clusterVal += Math.sin((localT - 0.15) * harmonicFreq * Math.PI + phaseShift) * harmonicAmp;
-                            }
-                            
-                            // Ultra-sharp random jitter for extreme treble (cymbal shimmer)
-                            if (trebleComp > 0.5) {
-                                const jitterFreq = vertexDensity * 3.5;
-                                const jitterAmp = (trebleComp - 0.5) * 0.05 * sharpnessFactor;
-                                clusterVal += Math.sin((localT - 0.15) * jitterFreq * Math.PI + now * 50) * jitterAmp;
-                                
-                                // Add second layer of chaos
-                                clusterVal += Math.cos((localT - 0.15) * jitterFreq * 1.7 * Math.PI - now * 30) * jitterAmp * 0.7;
-                            }
-                            
-                            // Apply cluster with envelope focused on R-R' region
-                            const clusterEnvelope = Math.sin((localT - 0.15) * Math.PI / 0.6);
-                            ekgVal += clusterVal * Math.max(0, clusterEnvelope) * sharpnessFactor;
-                        }
-
-                        // Fade at edges smoothly
-                        let fade = 1;
-                        const edgeFade = distFromSpike / (spikeWidth / 2);
-                        if (edgeFade > 0.65) {
-                            fade = Math.pow((1 - edgeFade) / 0.35, 2);
-                        }
-
-                        // Apply burst phase
-                        if (burstPhase >= 0 && burstPhase <= 1) {
-                            const attackDecay = burstPhase < 0.12 
-                                ? burstPhase / 0.12
-                                : 1 - Math.pow((burstPhase - 0.12) / 0.88, 1.6);
-                            y = traceY - ekgVal * maxSpike * spikeIntensity * fade * attackDecay;
-                        }
-                    }
-                }
-            }
-
-            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        }
-
-        // Multi-layer stroke for glow effect
-        ctx.strokeStyle = color.outer;
-        ctx.lineWidth = 8;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.stroke();
-
-        ctx.strokeStyle = color.mid;
-        ctx.lineWidth = 3;
-        ctx.stroke();
-
-        ctx.strokeStyle = color.inner;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-    }
 
     // Subtle grid lines for medical monitor feel
     ctx.strokeStyle = 'rgba(255,255,255,0.03)';
     ctx.lineWidth = 1;
-    const gridSize = w / 10;
-    for (let gx = 0; gx < w; gx += gridSize) {
+    for (let i = 1; i < 5; i++) {
+        const divX = (i / 5) * w;
         ctx.beginPath();
         ctx.moveTo(gx, midY - maxSpike * 0.6);
         ctx.lineTo(gx, midY + maxSpike * 0.6);
-        ctx.stroke();
-    }
-    for (let gy = midY - maxSpike * 0.5; gy <= midY + maxSpike * 0.5; gy += gridSize * 0.4) {
-        ctx.beginPath();
-        ctx.moveTo(0, gy);
-        ctx.lineTo(w, gy);
         ctx.stroke();
     }
 }
